@@ -8,7 +8,7 @@
     {
       "name": "DLL Path Prepending & Delivery",
       "passed": true,
-      "duration_ms": 346,
+      "duration_ms": 215,
       "details": {
         "expected_prefix": "C:\\Users\\kunal\\OneDrive\\Desktop\\swarm\\build-cuda;C:\\Users\\kunal\\OneDrive\\Desktop\\swarm\\build-cuda\\bin",
         "verified_in_child_logs": true
@@ -40,10 +40,10 @@
     {
       "name": "Hidden-Console Child Launch",
       "passed": true,
-      "duration_ms": 264,
+      "duration_ms": 271,
       "details": {
         "hide_console": true,
-        "pid": 1096,
+        "pid": 6364,
         "port": 59204
       },
       "error": null
@@ -51,9 +51,9 @@
     {
       "name": "Graceful Shutdown (Hidden Console)",
       "passed": true,
-      "duration_ms": 51,
+      "duration_ms": 38,
       "details": {
-        "duration_ms": 51,
+        "duration_ms": 38,
         "exit_code": 0,
         "graceful_exit": true,
         "ports_released": true
@@ -63,7 +63,7 @@
     {
       "name": "Staged Startup - RPC Readiness Timeout",
       "passed": true,
-      "duration_ms": 655,
+      "duration_ms": 658,
       "details": {
         "children_cleaned_up": true,
         "state_is_error": true,
@@ -74,7 +74,7 @@
     {
       "name": "Staged Startup - Coordinator Health Timeout",
       "passed": true,
-      "duration_ms": 1467,
+      "duration_ms": 1485,
       "details": {
         "coord_port_released": true,
         "rpc_port_released": true,
@@ -86,18 +86,18 @@
     {
       "name": "Staged Startup - Full Progression & Stop",
       "passed": true,
-      "duration_ms": 858,
+      "duration_ms": 872,
       "details": {
-        "coordinator_pid": 19904,
+        "coordinator_pid": 18588,
         "ready_state_reached": true,
-        "rpc_pid": 21760
+        "rpc_pid": 13016
       },
       "error": null
     },
     {
       "name": "Partial Failure Cleanup & Orphan Prevention",
       "passed": true,
-      "duration_ms": 1010,
+      "duration_ms": 1008,
       "details": {
         "no_orphans_running": true,
         "partial_failure_detected": true,
@@ -119,7 +119,7 @@
     {
       "name": "Repeated Start/Stop Cycles",
       "passed": true,
-      "duration_ms": 2426,
+      "duration_ms": 2376,
       "details": {
         "cycles_completed": 3,
         "success": true
@@ -129,11 +129,11 @@
     {
       "name": "Job Object Tree Reclamation",
       "passed": true,
-      "duration_ms": 373,
+      "duration_ms": 385,
       "details": {
         "pids": [
-          16172,
-          18196
+          1808,
+          9264
         ],
         "ports_reclaimed": true
       },
@@ -142,7 +142,7 @@
     {
       "name": "Live Host Diagnostics Generation",
       "passed": true,
-      "duration_ms": 1028,
+      "duration_ms": 1027,
       "details": {
         "configuration_valid": true,
         "coordinator_ownership": "Available (Unbound)",
@@ -184,7 +184,7 @@
     {
       "name": "Port Occupancy vs Ownership Distinction",
       "passed": true,
-      "duration_ms": 822,
+      "duration_ms": 821,
       "details": {
         "managed_count": 0,
         "occupant_ownership": "External / Unmanaged Process (Protected — Supervisor will not adopt or terminate)",
@@ -266,7 +266,7 @@
     {
       "name": "Duplicate Startup Request Guard",
       "passed": true,
-      "duration_ms": 791,
+      "duration_ms": 809,
       "details": {
         "cluster_remained_ready": true,
         "duplicate_rejected": true
@@ -276,7 +276,7 @@
     {
       "name": "RPC Startup Failure & Clean Teardown",
       "passed": true,
-      "duration_ms": 516,
+      "duration_ms": 522,
       "details": {
         "coord_never_spawned": true,
         "failed_cleanly": true,
@@ -289,7 +289,7 @@
     {
       "name": "Cancellation During Startup & Rollback",
       "passed": true,
-      "duration_ms": 553,
+      "duration_ms": 552,
       "details": {
         "ports_freed": true
       },
@@ -298,7 +298,7 @@
     {
       "name": "Controlled Engine Lifecycle (IPC Command)",
       "passed": true,
-      "duration_ms": 893,
+      "duration_ms": 892,
       "details": {
         "success": true
       },
@@ -307,7 +307,7 @@
     {
       "name": "Simulated Failure Modes & Rollback",
       "passed": true,
-      "duration_ms": 3915,
+      "duration_ms": 3892,
       "details": {
         "coord_timeout_handled": true,
         "ports_clean": true,
@@ -318,7 +318,7 @@
     {
       "name": "Real-Mode Safety Boundary & Headroom Guard",
       "passed": true,
-      "duration_ms": 141,
+      "duration_ms": 134,
       "details": {
         "denied_rejected": true,
         "state_safe": true,
@@ -330,7 +330,7 @@
     {
       "name": "Standalone CUDA Low-Memory Profile Guards & Lifecycle",
       "passed": true,
-      "duration_ms": 653,
+      "duration_ms": 637,
       "details": {
         "coord_ready": true,
         "denied_blocked": true,
@@ -361,7 +361,7 @@
     {
       "name": "Standalone Environment Variables & Fallback Rejection Guard",
       "passed": true,
-      "duration_ms": 74,
+      "duration_ms": 98,
       "details": {
         "ctx_size_ok": true,
         "default_guard_enforced": true,
@@ -389,7 +389,7 @@
     {
       "name": "Exact Profile Configurations & Distinct Thresholds",
       "passed": true,
-      "duration_ms": 13,
+      "duration_ms": 17,
       "details": {
         "def_env_ok": true,
         "def_ram_ok": true,
@@ -419,7 +419,7 @@
     {
       "name": "Read-Only Profile Query & Safety Invariant Preservation",
       "passed": true,
-      "duration_ms": 141,
+      "duration_ms": 179,
       "details": {
         "count_ok": true,
         "default_id_ok": true,
@@ -436,7 +436,7 @@
     {
       "name": "Profile Simulation Fixtures & Error State Handling",
       "passed": true,
-      "duration_ms": 5,
+      "duration_ms": 6,
       "details": {
         "both_eligible_ok": true,
         "ram_deficit_ok": true,
@@ -450,7 +450,7 @@
     {
       "name": "Remote Worker Endpoint Socket Probe & Diagnostics",
       "passed": true,
-      "duration_ms": 1025,
+      "duration_ms": 1018,
       "details": {
         "invalid_address_pass": true,
         "latency_ms": 0,
@@ -462,7 +462,7 @@
     {
       "name": "Host Network Interface Discovery & Configuration",
       "passed": true,
-      "duration_ms": 1214,
+      "duration_ms": 2295,
       "details": {
         "coordinator_port": 8080,
         "ip_count": 1,
@@ -525,7 +525,7 @@
     {
       "name": "Transactional Allocation Persistence, Backup & Safe Rollback",
       "passed": true,
-      "duration_ms": 20,
+      "duration_ms": 14,
       "details": {
         "backup_exists": true,
         "has_dynamic_policy": true,
