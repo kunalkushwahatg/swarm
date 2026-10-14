@@ -1,0 +1,76 @@
+{
+  "completion_timestamp": "SystemTime { intervals: 134362729849784324 }",
+  "health_verification": {
+    "http_status": 200,
+    "inference_ready": true,
+    "model_loaded": true,
+    "raw_body": "{\n  \"context\": {\n    \"created\": true,\n    \"size\": 512\n  },\n  \"inference\": {\n    \"ready\": true,\n    \"ready_required_rpc_workers\": 0,\n    \"ready_workers\": 0,\n    \"required_rpc_workers\": 0,\n    \"total_rpc_workers\": 0,\n    \"total_workers\": 1\n  },\n  \"model\": {\n    \"loaded\": true,\n    \"path\": \"C:\\\\Users\\\\kunal\\\\OneDrive\\\\Desktop\\\\swarm\\\\models\\\\qwen2.5-3b-instruct-q4_k_m.official-check.gguf\"\n  },\n  \"server\": {\n    \"host\": \"0.0.0.0\",\n    \"port\": 8080,\n    \"state\": \"running\"\n  },\n  \"status\": \"ok\",\n  \"timestamp\": \"2026-10-12 15:33:03\",\n  \"workers\": [\n    {\n      \"assigned_layer_ranges\": [],\n      \"assigned_layers\": [],\n      \"backend_id\": \"local-cuda-0\",\n      \"backend_type\": \"LOCAL_CUDA\",\n      \"device_name\": \"CUDA0\",\n      \"device_type\": 1,\n      \"host\": \"127.0.0.1\",\n      \"id\": \"local-cuda-0\",\n      \"inference_count\": 0,\n      \"is_inference_active\": false,\n      \"is_loopback\": false,\n      \"last_error\": \"Worker is not reachable at 127.0.0.1:0\",\n      \"last_health_check\": 0,\n      \"log_derived\": false,\n      \"measurement_status\": \"unavailable\",\n      \"memory_free_bytes\": 3526780519,\n      \"memory_scope\": \"unspecified\",\n      \"memory_total_bytes\": 4294836224,\n      \"port\": 0,\n      \"started_at\": 0,\n      \"state\": \"UNAVAILABLE\",\n      \"type\": \"LOCAL_CUDA\"\n    }\n  ]\n}"
+  },
+  "inference_metrics": {
+    "chunk_count": 6,
+    "coordinator_metrics": "# HELP swarm_requests_total Total number of HTTP requests\n# TYPE swarm_requests_total counter\nswarm_requests_total 1\n\n# HELP swarm_active_requests Number of active requests\n# TYPE swarm_active_requests gauge\nswarm_active_requests 0\n\n# HELP swarm_worker_state_total Number of workers by state\n# TYPE swarm_worker_state_total gauge\nswarm_worker_state_total{state=\"ready\"} 0\nswarm_worker_state_total{state=\"busy\"} 0\nswarm_worker_state_total{state=\"error\"} 0\n\n# HELP swarm_nodes_total Total number of nodes in inventory\n# TYPE swarm_nodes_total gauge\nswarm_nodes_total 1\n# HELP swarm_nodes_online Total number of online nodes\n# TYPE swarm_nodes_online gauge\nswarm_nodes_online 1\n# HELP swarm_nodes_required Total number of required nodes for active model\n# TYPE swarm_nodes_required gauge\nswarm_nodes_required 1\n# HELP swarm_nodes_agent_reported Total number of nodes reporting via agent\n# TYPE swarm_nodes_agent_reported gauge\nswarm_nodes_agent_reported 0\n# HELP swarm_nodes_stale Total number of nodes with stale reports\n# TYPE swarm_nodes_stale gauge\nswarm_nodes_stale 0\n\n# HELP swarm_backend_model_buffer_bytes Model buffer size allocated on backend in bytes\n# TYPE swarm_backend_model_buffer_bytes gauge\nswarm_backend_model_buffer_bytes{backend=\"CPU\",type=\"cpu\"} 175028306\nswarm_backend_model_buffer_bytes{backend=\"CUDA0\",type=\"local_cuda\"} 1923958702\n\n# HELP swarm_backend_kv_buffer_bytes KV cache buffer size allocated on backend in bytes\n# TYPE swarm_backend_kv_buffer_bytes gauge\nswarm_backend_kv_buffer_bytes{backend=\"CPU\",type=\"cpu\"} 0\nswarm_backend_kv_buffer_bytes{backend=\"CUDA0\",type=\"local_cuda\"} 18874368\n\n# HELP swarm_backend_compute_buffer_bytes Compute buffer size allocated on backend in bytes\n# TYPE swarm_backend_compute_buffer_bytes gauge\nswarm_backend_compute_buffer_bytes{backend=\"CPU\",type=\"cpu\"} 0\nswarm_backend_compute_buffer_bytes{backend=\"CUDA0\",type=\"local_cuda\"} 8923382\n\n# HELP swarm_backend_layers_assigned Number of model layers assigned to backend\n# TYPE swarm_backend_layers_assigned gauge\nswarm_backend_layers_assigned{backend=\"CPU\",type=\"cpu\"} 0\nswarm_backend_layers_assigned{backend=\"CUDA0\",type=\"local_cuda\"} 37\n\n# HELP swarm_policy_configured Placement policy mode (1 if active)\n# TYPE swarm_policy_configured gauge\nswarm_policy_configured{policy=\"none\"} 1\n\n# HELP swarm_backend_virtual_budget_bytes Configured virtual memory budget in bytes\n# TYPE swarm_backend_virtual_budget_bytes gauge\n\n# HELP swarm_backend_policy_match Whether actual placement matched prediction (1=match, 0=mismatch)\n# TYPE swarm_backend_policy_match gauge\n\n# HELP swarm_inference_tokens_generated_total Total number of tokens generated\n# TYPE swarm_inference_tokens_generated_total counter\nswarm_inference_tokens_generated_total 5\n\n# HELP swarm_inference_tokens_per_second Token generation rate of the most recent request\n# TYPE swarm_inference_tokens_per_second gauge\nswarm_inference_tokens_per_second 19.026534\n\n# HELP swarm_inference_prompt_eval_duration_seconds Total prompt evaluation time in seconds\n# TYPE swarm_inference_prompt_eval_duration_seconds summary\nswarm_inference_prompt_eval_duration_seconds_sum 0.461277\nswarm_inference_prompt_eval_duration_seconds_count 1\n\n# HELP swarm_inference_token_gen_duration_seconds Total token generation time in seconds\n# TYPE swarm_inference_token_gen_duration_seconds summary\nswarm_inference_token_gen_duration_seconds_sum 0.262791\nswarm_inference_token_gen_duration_seconds_count 1\n\n# HELP swarm_inference_duration_seconds Total inference time in seconds\n# TYPE swarm_inference_duration_seconds summary\nswarm_inference_duration_seconds_sum 0.733036\nswarm_inference_duration_seconds_count 1\n",
+    "generation_duration_ms": 742,
+    "prompt": "Reply with exactly: SWARM CUDA TEST OK",
+    "ram_post_inference_mb": 453,
+    "raw_chunks": [
+      "{\"choices\":[{\"delta\":{\"content\":\"SW\"}}],\"id\":1}",
+      "{\"choices\":[{\"delta\":{\"content\":\"ARM\"}}],\"id\":1}",
+      "{\"choices\":[{\"delta\":{\"content\":\" CUDA\"}}],\"id\":1}",
+      "{\"choices\":[{\"delta\":{\"content\":\" TEST\"}}],\"id\":1}",
+      "{\"choices\":[{\"delta\":{\"content\":\" OK\"}}],\"id\":1}",
+      "{\"choices\":[{\"delta\":{}}],\"id\":1,\"timings\":{\"gen_ms\":262.7909,\"prompt_eval_ms\":461.277,\"tokens_generated\":5,\"tokens_per_sec\":19.026534023818932,\"total_ms\":733.0356}}"
+    ],
+    "response_text": "SWARM CUDA TEST OK",
+    "success": true,
+    "time_to_first_content_ms": 484,
+    "vram_post_inference_mib": 1262
+  },
+  "launch_attempted": true,
+  "preflight_readings": {
+    "available_gpu_vram_mib": 3450,
+    "available_physical_ram_mb": 1325,
+    "port_8080_free": true,
+    "preflight_check": {
+      "can_launch": true,
+      "coordinator_binary_found": true,
+      "coordinator_binary_path": "C:\\Users\\kunal\\OneDrive\\Desktop\\swarm\\build-cuda\\swarm_node.exe",
+      "coordinator_port_available": true,
+      "issues": [],
+      "model_found": true,
+      "model_path": "C:\\Users\\kunal\\OneDrive\\Desktop\\swarm\\models\\qwen2.5-3b-instruct-q4_k_m.official-check.gguf",
+      "rpc_binary_found": true,
+      "rpc_binary_path": "C:\\Users\\kunal\\OneDrive\\Desktop\\swarm\\dist\\swarm-worker-windows-x64\\ggml-rpc-server.exe",
+      "rpc_port_available": true
+    },
+    "total_gpu_vram_mib": 4096,
+    "total_physical_ram_mb": 8032
+  },
+  "profile": {
+    "effective_env": {
+      "PORT": "8080",
+      "SWARM_CTX_SIZE": "512",
+      "SWARM_DEPLOYMENT_ENV": "development",
+      "SWARM_MODEL_PATH": "C:\\Users\\kunal\\OneDrive\\Desktop\\swarm\\models\\qwen2.5-3b-instruct-q4_k_m.official-check.gguf",
+      "SWARM_N_GPU_LAYERS": "-1",
+      "SWARM_PLACEMENT_POLICY": "none",
+      "SWARM_USE_RPC": "0"
+    },
+    "name": "low_memory_cuda_standalone"
+  },
+  "shutdown_verification": {
+    "final_cluster_state": "Stopped",
+    "managed_children_remaining": 1,
+    "port_8080_released": true,
+    "stop_duration_ms": 649
+  },
+  "start_timestamp": "SystemTime { intervals: 134362729742503584 }",
+  "startup_metrics": {
+    "cluster_state": "Ready",
+    "coordinator_pid": 18420,
+    "ram_post_startup_mb": 460,
+    "startup_duration_ms": 9021,
+    "vram_post_startup_mib": 1268
+  },
+  "test_name": "Phase C.3.6 Standalone CUDA Real Inference Test",
+  "test_passed": true
+}

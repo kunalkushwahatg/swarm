@@ -1,0 +1,23 @@
+﻿{
+    "swarm":  {
+                  "pid":  7488,
+                  "exited":  false,
+                  "exit_code":  null
+              },
+    "windows_application_error":  null,
+    "rpc0":  {
+                 "pid":  8780,
+                 "exited":  false,
+                 "exit_code":  null
+             },
+    "rpc1_stopped":  true,
+    "response":  {
+                     "request":  "sent",
+                     "outcome":  "request_failed",
+                     "error":  "The remote server returned an error: (503) Server Unavailable."
+                 },
+    "rpc0_listener":  true,
+    "rpc1_listener":  false,
+    "http_listener":  true,
+    "swarm_exited_within_timeout":  false
+}

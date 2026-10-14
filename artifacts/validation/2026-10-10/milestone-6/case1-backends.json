@@ -1,0 +1,149 @@
+{
+    "backends":  [
+                     {
+                         "assigned_layer_ranges":  [
+                                                       [
+                                                           0,
+                                                           32
+                                                       ]
+                                                   ],
+                         "assigned_layers":  [
+                                                 0,
+                                                 1,
+                                                 2,
+                                                 3,
+                                                 4,
+                                                 5,
+                                                 6,
+                                                 7,
+                                                 8,
+                                                 9,
+                                                 10,
+                                                 11,
+                                                 12,
+                                                 13,
+                                                 14,
+                                                 15,
+                                                 16,
+                                                 17,
+                                                 18,
+                                                 19,
+                                                 20,
+                                                 21,
+                                                 22,
+                                                 23,
+                                                 24,
+                                                 25,
+                                                 26,
+                                                 27,
+                                                 28,
+                                                 29,
+                                                 30,
+                                                 31,
+                                                 32
+                                             ],
+                         "backend_id":  "CPU",
+                         "backend_type":  "cpu",
+                         "compute_buffer_bytes":  10496246,
+                         "description":  "Host CPU",
+                         "device_name":  "CPU",
+                         "endpoint":  "",
+                         "is_loopback":  false,
+                         "kv_buffer_bytes":  69206016,
+                         "log_derived":  true,
+                         "measurement_status":  "observed",
+                         "memory_free_bytes":  744263680,
+                         "memory_scope":  "shared_host",
+                         "memory_total_bytes":  8422543360,
+                         "model_buffer_bytes":  1695736136
+                     },
+                     {
+                         "assigned_layer_ranges":  [
+                                                       [
+                                                           35,
+                                                           36
+                                                       ]
+                                                   ],
+                         "assigned_layers":  [
+                                                 35,
+                                                 36
+                                             ],
+                         "backend_id":  "CUDA0",
+                         "backend_type":  "local_cuda",
+                         "compute_buffer_bytes":  315359232,
+                         "description":  "NVIDIA GeForce GTX 1050",
+                         "device_name":  "CUDA0",
+                         "endpoint":  "",
+                         "is_loopback":  false,
+                         "kv_buffer_bytes":  2097152,
+                         "log_derived":  true,
+                         "measurement_status":  "observed",
+                         "memory_free_bytes":  3526780519,
+                         "memory_scope":  "device_vram",
+                         "memory_total_bytes":  4294836224,
+                         "model_buffer_bytes":  304590356
+                     },
+                     {
+                         "assigned_layer_ranges":  [
+                                                       [
+                                                           33,
+                                                           33
+                                                       ]
+                                                   ],
+                         "assigned_layers":  [
+                                                 33
+                                             ],
+                         "backend_id":  "RPC0",
+                         "backend_type":  "loopback_rpc",
+                         "compute_buffer_bytes":  76021760,
+                         "description":  "127.0.0.1:50052",
+                         "device_name":  "RPC0",
+                         "endpoint":  "127.0.0.1:50052",
+                         "is_loopback":  true,
+                         "kv_buffer_bytes":  2097152,
+                         "log_derived":  true,
+                         "measurement_status":  "observed",
+                         "memory_free_bytes":  809832448,
+                         "memory_scope":  "shared_host",
+                         "memory_total_bytes":  8422543360,
+                         "model_buffer_bytes":  49325015
+                     },
+                     {
+                         "assigned_layer_ranges":  [
+                                                       [
+                                                           34,
+                                                           34
+                                                       ]
+                                                   ],
+                         "assigned_layers":  [
+                                                 34
+                                             ],
+                         "backend_id":  "RPC1",
+                         "backend_type":  "loopback_rpc",
+                         "compute_buffer_bytes":  76021760,
+                         "description":  "127.0.0.1:50053",
+                         "device_name":  "RPC1",
+                         "endpoint":  "127.0.0.1:50053",
+                         "is_loopback":  true,
+                         "kv_buffer_bytes":  2097152,
+                         "log_derived":  true,
+                         "measurement_status":  "observed",
+                         "memory_free_bytes":  809820160,
+                         "memory_scope":  "shared_host",
+                         "memory_total_bytes":  8422543360,
+                         "model_buffer_bytes":  49325015
+                     }
+                 ],
+    "memory_accounting":  {
+                              "host_ram_available_bytes":  104796160,
+                              "host_ram_total_bytes":  8422543360,
+                              "note":  "Loopback RPC endpoints share physical host RAM; reported capacities are not additive.",
+                              "shared_host_memory_deduplicated":  true,
+                              "total_allocated_buffers_bytes":  2652372992,
+                              "total_compute_buffer_bytes":  477898998,
+                              "total_kv_buffer_bytes":  75497472,
+                              "total_model_buffer_bytes":  2098976522
+                          },
+    "placement_policy":  "none",
+    "policy_evaluated":  false
+}

@@ -1,0 +1,13 @@
+{
+    "ZeroLayerFaultTest":  {
+                               "Status":  "PASS",
+                               "Rpc0AssignedLayers":  0,
+                               "Rpc1AssignedLayers":  2,
+                               "InferenceReadyWithZeroWorkerDown":  true,
+                               "ZeroWorkerLossInferenceText":  "2 + 2 equals 4.",
+                               "ZeroWorkerLossInferenceSuccess":  true,
+                               "InferenceReadyWithRequiredWorkerDown":  false,
+                               "CaughtExpected503OnRequiredLoss":  true,
+                               "SwarmRemainedAlive":  true
+                           }
+}

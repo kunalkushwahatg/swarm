@@ -1,0 +1,97 @@
+{
+  "timestamp": "2026-10-13T14:17:04.457Z",
+  "safety_checks": {
+    "ram_mb": {
+      "available": null,
+      "total": null,
+      "min_required": 1000,
+      "passed": false
+    },
+    "vram_mb": {
+      "available": 3277,
+      "total": 4096,
+      "gpu": "NVIDIA GeForce GTX 1050",
+      "min_required": 3100,
+      "passed": true
+    },
+    "port_8080_free": true,
+    "no_existing_swarm_procs": true,
+    "model_file": {
+      "exists": true,
+      "size": 2104932768,
+      "passed": true
+    }
+  },
+  "ui_startup": {
+    "launch_triggered": {
+      "ok": true,
+      "authorized": true
+    },
+    "ready": true,
+    "duration_ms": 9200,
+    "health": {
+      "context": {
+        "created": true,
+        "size": 512
+      },
+      "inference": {
+        "ready": true,
+        "ready_required_rpc_workers": 0,
+        "ready_workers": 0,
+        "required_rpc_workers": 0,
+        "total_rpc_workers": 0,
+        "total_workers": 1
+      },
+      "model": {
+        "loaded": true,
+        "path": "C:\\Users\\kunal\\OneDrive\\Desktop\\swarm\\models\\qwen2.5-3b-instruct-q4_k_m.official-check.gguf"
+      },
+      "server": {
+        "host": "0.0.0.0",
+        "port": 8080,
+        "state": "running"
+      },
+      "status": "ok",
+      "timestamp": "2026-10-13 19:47:24",
+      "workers": [
+        {
+          "assigned_layer_ranges": [],
+          "assigned_layers": [],
+          "backend_id": "local-cuda-0",
+          "backend_type": "LOCAL_CUDA",
+          "device_name": "CUDA0",
+          "device_type": 1,
+          "host": "127.0.0.1",
+          "id": "local-cuda-0",
+          "inference_count": 0,
+          "is_inference_active": false,
+          "is_loopback": false,
+          "last_error": "Worker is not reachable at 127.0.0.1:0",
+          "last_health_check": 0,
+          "log_derived": false,
+          "measurement_status": "unavailable",
+          "memory_free_bytes": 3526780519,
+          "memory_scope": "unspecified",
+          "memory_total_bytes": 4294836224,
+          "port": 0,
+          "started_at": 0,
+          "state": "UNAVAILABLE",
+          "type": "LOCAL_CUDA"
+        }
+      ]
+    }
+  },
+  "chat_test": {
+    "prompt": "Reply with exactly: SWARM DESKTOP TEST OK",
+    "completed": true,
+    "duration_ms": 2029,
+    "assistant_message": "Swarm\nSWARM DESKTOP TEST OK\n7 tokens\n·\n19.6 tok/s\n·\n1.0 s prompt evaluation\nTime to first content: 1.14 s (client)\nGeneration: 357 ms (backend)\nTotal: 1.38 s (backend)",
+    "has_exact_response": true
+  },
+  "shutdown": {
+    "coordinator_exited": true,
+    "port_8080_released": true,
+    "recovered_vram_mb": 3387
+  },
+  "success": true
+}

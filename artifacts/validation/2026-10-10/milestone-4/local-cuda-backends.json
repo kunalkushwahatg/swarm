@@ -1,0 +1,97 @@
+{
+    "backends":  [
+                     {
+                         "assigned_layer_ranges":  [
+
+                                                   ],
+                         "assigned_layers":  [
+
+                                             ],
+                         "backend_id":  "CPU",
+                         "backend_type":  "cpu",
+                         "compute_buffer_bytes":  0,
+                         "description":  "Host CPU",
+                         "device_name":  "CPU",
+                         "endpoint":  "",
+                         "is_loopback":  false,
+                         "kv_buffer_bytes":  0,
+                         "log_derived":  true,
+                         "measurement_status":  "observed",
+                         "memory_free_bytes":  945324032,
+                         "memory_scope":  "shared_host",
+                         "memory_total_bytes":  8422543360,
+                         "model_buffer_bytes":  175028306
+                     },
+                     {
+                         "assigned_layer_ranges":  [
+                                                       [
+                                                           0,
+                                                           36
+                                                       ]
+                                                   ],
+                         "assigned_layers":  [
+                                                 0,
+                                                 1,
+                                                 2,
+                                                 3,
+                                                 4,
+                                                 5,
+                                                 6,
+                                                 7,
+                                                 8,
+                                                 9,
+                                                 10,
+                                                 11,
+                                                 12,
+                                                 13,
+                                                 14,
+                                                 15,
+                                                 16,
+                                                 17,
+                                                 18,
+                                                 19,
+                                                 20,
+                                                 21,
+                                                 22,
+                                                 23,
+                                                 24,
+                                                 25,
+                                                 26,
+                                                 27,
+                                                 28,
+                                                 29,
+                                                 30,
+                                                 31,
+                                                 32,
+                                                 33,
+                                                 34,
+                                                 35,
+                                                 36
+                                             ],
+                         "backend_id":  "CUDA0",
+                         "backend_type":  "local_cuda",
+                         "compute_buffer_bytes":  10496246,
+                         "description":  "NVIDIA GeForce GTX 1050",
+                         "device_name":  "CUDA0",
+                         "endpoint":  "",
+                         "is_loopback":  false,
+                         "kv_buffer_bytes":  75497472,
+                         "log_derived":  true,
+                         "measurement_status":  "observed",
+                         "memory_free_bytes":  3526780519,
+                         "memory_scope":  "device_vram",
+                         "memory_total_bytes":  4294836224,
+                         "model_buffer_bytes":  1923958702
+                     }
+                 ],
+    "memory_accounting":  {
+                              "host_ram_available_bytes":  413511680,
+                              "host_ram_total_bytes":  8422543360,
+                              "note":  "Unique hosts reported.",
+                              "shared_host_memory_deduplicated":  false,
+                              "total_allocated_buffers_bytes":  2184980726,
+                              "total_compute_buffer_bytes":  10496246,
+                              "total_kv_buffer_bytes":  75497472,
+                              "total_model_buffer_bytes":  2098987008
+                          }
+}

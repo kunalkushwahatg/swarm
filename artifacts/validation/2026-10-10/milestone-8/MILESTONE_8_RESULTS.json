@@ -1,0 +1,16 @@
+﻿{
+    "timestamp":  "2026-10-10T20:37:37+05:30",
+    "milestone":  8,
+    "model_check_sha256":  "626B4A6678B86442240E33DF819E00132D3BA7DDDFE1CDC4FBB18E0A9615C62D",
+    "cases":  {
+                  "Step0_UnitTests":  "PASS",
+                  "Case1_LiveAgentIngestion":  "PASS",
+                  "Case2_MalformedReportRejection":  "PASS",
+                  "Case3_StalenessAndRecovery":  "PASS",
+                  "Case4_PrometheusMetrics":  "PASS",
+                  "Case5_BackwardCompatibility":  "PASS",
+                  "Case6_LocalCUDARegression":  "PASS",
+                  "Case7_TeardownAndPorts":  "PASS"
+              },
+    "overall":  "PASS"
+}

@@ -1,0 +1,320 @@
+﻿{
+    "cluster_summary":  {
+                            "agent_reported_nodes":  0,
+                            "loopback_nodes":  3,
+                            "memory_accounting":  {
+                                                      "host_ram_deduplicated":  true,
+                                                      "independent_host_ram_bytes":  8422543360,
+                                                      "note":  "Loopback workers share the single host machine RAM; reported host memories are not summed additively.",
+                                                      "total_compute_buffer_bytes":  477898998,
+                                                      "total_kv_buffer_bytes":  75497472,
+                                                      "total_model_buffer_bytes":  2098976522
+                                                  },
+                            "online_nodes":  3,
+                            "ready_nodes":  3,
+                            "remote_nodes":  0,
+                            "required_nodes":  3,
+                            "stale_nodes":  0,
+                            "total_nodes":  3,
+                            "unrequired_nodes":  0
+                        },
+    "nodes":  [
+                  {
+                      "agent_reported":  false,
+                      "agent_session_id":  "",
+                      "agent_version":  "none",
+                      "assigned_layer_ranges":  [
+                                                    [
+                                                        33,
+                                                        33
+                                                    ]
+                                                ],
+                      "assigned_layers":  [
+                                              33
+                                          ],
+                      "clock_skew_ms":  0,
+                      "compute_buffer_bytes":  76021760,
+                      "connection_state":  "READY",
+                      "cpu_info":  {
+                                       "architecture":  "unknown",
+                                       "model_name":  "unknown",
+                                       "processor_count":  0
+                                   },
+                      "devices":  [
+                                      {
+                                          "device_id":  "RPC0",
+                                          "device_name":  "RPC0",
+                                          "device_type":  "CPU",
+                                          "memory_free_bytes":  {
+                                                                    "observed_at_ms":  1791644864547,
+                                                                    "provenance":  "measured",
+                                                                    "source":  "ggml_rpc_device_props",
+                                                                    "value":  984162304
+                                                                },
+                                          "memory_total_bytes":  {
+                                                                     "observed_at_ms":  1791644864547,
+                                                                     "provenance":  "measured",
+                                                                     "source":  "ggml_rpc_device_props",
+                                                                     "value":  8422543360
+                                                                 }
+                                      }
+                                  ],
+                      "endpoint":  "127.0.0.1:50052",
+                      "host":  "127.0.0.1",
+                      "is_loopback":  true,
+                      "is_ready_for_inference":  true,
+                      "is_required_by_model":  true,
+                      "is_simulated":  false,
+                      "is_stale":  false,
+                      "kv_buffer_bytes":  2097152,
+                      "last_agent_report_ms":  0,
+                      "last_observed_ms":  1791644864547,
+                      "last_receipt_time_ms":  0,
+                      "last_sequence_number":  0,
+                      "model_buffer_bytes":  49325015,
+                      "node_id":  "node-127.0.0.1-50052",
+                      "node_role":  "worker",
+                      "placement_budget_bytes":  {
+                                                     "observed_at_ms":  0,
+                                                     "provenance":  "unknown",
+                                                     "source":  "no_budget_configured",
+                                                     "value":  null
+                                                 },
+                      "port":  50052,
+                      "ram_free_bytes":  {
+                                             "observed_at_ms":  1791644864547,
+                                             "provenance":  "measured",
+                                             "source":  "ggml_rpc_device_props",
+                                             "value":  984162304
+                                         },
+                      "ram_total_bytes":  {
+                                              "observed_at_ms":  1791644864547,
+                                              "provenance":  "measured",
+                                              "source":  "ggml_rpc_device_props",
+                                              "value":  8422543360
+                                          },
+                      "unsupported_metrics":  [
+
+                                              ],
+                      "validation_errors":  [
+
+                                            ],
+                      "vram_free_bytes":  {
+                                              "observed_at_ms":  0,
+                                              "provenance":  "unknown",
+                                              "source":  "no_gpu_device",
+                                              "value":  null
+                                          },
+                      "vram_total_bytes":  {
+                                               "observed_at_ms":  0,
+                                               "provenance":  "unknown",
+                                               "source":  "no_gpu_device",
+                                               "value":  null
+                                           }
+                  },
+                  {
+                      "agent_reported":  false,
+                      "agent_session_id":  "",
+                      "agent_version":  "none",
+                      "assigned_layer_ranges":  [
+                                                    [
+                                                        34,
+                                                        34
+                                                    ]
+                                                ],
+                      "assigned_layers":  [
+                                              34
+                                          ],
+                      "clock_skew_ms":  0,
+                      "compute_buffer_bytes":  76021760,
+                      "connection_state":  "READY",
+                      "cpu_info":  {
+                                       "architecture":  "unknown",
+                                       "model_name":  "unknown",
+                                       "processor_count":  0
+                                   },
+                      "devices":  [
+                                      {
+                                          "device_id":  "RPC1",
+                                          "device_name":  "RPC1",
+                                          "device_type":  "CPU",
+                                          "memory_free_bytes":  {
+                                                                    "observed_at_ms":  1791644864547,
+                                                                    "provenance":  "measured",
+                                                                    "source":  "ggml_rpc_device_props",
+                                                                    "value":  984154112
+                                                                },
+                                          "memory_total_bytes":  {
+                                                                     "observed_at_ms":  1791644864547,
+                                                                     "provenance":  "measured",
+                                                                     "source":  "ggml_rpc_device_props",
+                                                                     "value":  8422543360
+                                                                 }
+                                      }
+                                  ],
+                      "endpoint":  "127.0.0.1:50053",
+                      "host":  "127.0.0.1",
+                      "is_loopback":  true,
+                      "is_ready_for_inference":  true,
+                      "is_required_by_model":  true,
+                      "is_simulated":  false,
+                      "is_stale":  false,
+                      "kv_buffer_bytes":  2097152,
+                      "last_agent_report_ms":  0,
+                      "last_observed_ms":  1791644864547,
+                      "last_receipt_time_ms":  0,
+                      "last_sequence_number":  0,
+                      "model_buffer_bytes":  49325015,
+                      "node_id":  "node-127.0.0.1-50053",
+                      "node_role":  "worker",
+                      "placement_budget_bytes":  {
+                                                     "observed_at_ms":  0,
+                                                     "provenance":  "unknown",
+                                                     "source":  "no_budget_configured",
+                                                     "value":  null
+                                                 },
+                      "port":  50053,
+                      "ram_free_bytes":  {
+                                             "observed_at_ms":  1791644864547,
+                                             "provenance":  "measured",
+                                             "source":  "ggml_rpc_device_props",
+                                             "value":  984154112
+                                         },
+                      "ram_total_bytes":  {
+                                              "observed_at_ms":  1791644864547,
+                                              "provenance":  "measured",
+                                              "source":  "ggml_rpc_device_props",
+                                              "value":  8422543360
+                                          },
+                      "unsupported_metrics":  [
+
+                                              ],
+                      "validation_errors":  [
+
+                                            ],
+                      "vram_free_bytes":  {
+                                              "observed_at_ms":  0,
+                                              "provenance":  "unknown",
+                                              "source":  "no_gpu_device",
+                                              "value":  null
+                                          },
+                      "vram_total_bytes":  {
+                                               "observed_at_ms":  0,
+                                               "provenance":  "unknown",
+                                               "source":  "no_gpu_device",
+                                               "value":  null
+                                           }
+                  },
+                  {
+                      "agent_reported":  false,
+                      "agent_session_id":  "",
+                      "agent_version":  "none",
+                      "assigned_layer_ranges":  [
+                                                    [
+                                                        35,
+                                                        36
+                                                    ]
+                                                ],
+                      "assigned_layers":  [
+                                              35,
+                                              36
+                                          ],
+                      "clock_skew_ms":  0,
+                      "compute_buffer_bytes":  325855478,
+                      "connection_state":  "ONLINE",
+                      "cpu_info":  {
+                                       "architecture":  "unknown",
+                                       "model_name":  "unknown",
+                                       "processor_count":  0
+                                   },
+                      "devices":  [
+                                      {
+                                          "device_id":  "CUDA0",
+                                          "device_name":  "NVIDIA GeForce GTX 1050",
+                                          "device_type":  "GPU",
+                                          "memory_free_bytes":  {
+                                                                    "observed_at_ms":  1791644864547,
+                                                                    "provenance":  "measured",
+                                                                    "source":  "ggml_cuda_props",
+                                                                    "value":  3526780519
+                                                                },
+                                          "memory_total_bytes":  {
+                                                                     "observed_at_ms":  1791644864547,
+                                                                     "provenance":  "measured",
+                                                                     "source":  "ggml_cuda_props",
+                                                                     "value":  4294836224
+                                                                 }
+                                      },
+                                      {
+                                          "device_id":  "CPU",
+                                          "device_name":  "CPU",
+                                          "device_type":  "CPU",
+                                          "memory_free_bytes":  {
+                                                                    "observed_at_ms":  1791644864547,
+                                                                    "provenance":  "measured",
+                                                                    "source":  "win32_GlobalMemoryStatusEx",
+                                                                    "value":  474742784
+                                                                },
+                                          "memory_total_bytes":  {
+                                                                     "observed_at_ms":  1791644864547,
+                                                                     "provenance":  "measured",
+                                                                     "source":  "win32_GlobalMemoryStatusEx",
+                                                                     "value":  8422543360
+                                                                 }
+                                      }
+                                  ],
+                      "endpoint":  "local",
+                      "host":  "127.0.0.1",
+                      "is_loopback":  true,
+                      "is_ready_for_inference":  true,
+                      "is_required_by_model":  true,
+                      "is_simulated":  false,
+                      "is_stale":  false,
+                      "kv_buffer_bytes":  71303168,
+                      "last_agent_report_ms":  0,
+                      "last_observed_ms":  1791644864547,
+                      "last_receipt_time_ms":  0,
+                      "last_sequence_number":  0,
+                      "model_buffer_bytes":  2000326492,
+                      "node_id":  "node-gateway-local",
+                      "node_role":  "gateway",
+                      "placement_budget_bytes":  {
+                                                     "observed_at_ms":  0,
+                                                     "provenance":  "unknown",
+                                                     "source":  "no_profile_configured",
+                                                     "value":  null
+                                                 },
+                      "port":  0,
+                      "ram_free_bytes":  {
+                                             "observed_at_ms":  1791644864547,
+                                             "provenance":  "measured",
+                                             "source":  "win32_GlobalMemoryStatusEx",
+                                             "value":  474742784
+                                         },
+                      "ram_total_bytes":  {
+                                              "observed_at_ms":  1791644864547,
+                                              "provenance":  "measured",
+                                              "source":  "win32_GlobalMemoryStatusEx",
+                                              "value":  8422543360
+                                          },
+                      "unsupported_metrics":  [
+
+                                              ],
+                      "validation_errors":  [
+
+                                            ],
+                      "vram_free_bytes":  {
+                                              "observed_at_ms":  1791644864547,
+                                              "provenance":  "measured",
+                                              "source":  "ggml_cuda_props",
+                                              "value":  3526780519
+                                          },
+                      "vram_total_bytes":  {
+                                               "observed_at_ms":  1791644864547,
+                                               "provenance":  "measured",
+                                               "source":  "ggml_cuda_props",
+                                               "value":  4294836224
+                                           }
+                  }
+              ]
+}

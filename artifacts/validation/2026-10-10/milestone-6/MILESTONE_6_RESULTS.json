@@ -1,0 +1,48 @@
+{
+    "Case 1: Worker Registration and Readiness":  {
+                                                      "InferenceReady":  true,
+                                                      "Status":  "PASS",
+                                                      "ReadyWorkers":  2,
+                                                      "ResponseText":  "2 + 2 equals 4."
+                                                  },
+    "Case 2: Invalid or Unreachable Endpoints":  {
+                                                     "MalformedExitCode":  1,
+                                                     "Status":  "PASS",
+                                                     "UnreachableExitCode":  1,
+                                                     "UnreachableDiagnosed":  true
+                                                 },
+    "Case 3: One Worker Unavailable Controlled 503":  {
+                                                          "SwarmRemainedAlive":  true,
+                                                          "InferenceReadyAfter":  false,
+                                                          "StatusCode":  503,
+                                                          "Caught503":  true,
+                                                          "Status":  "PASS",
+                                                          "UnreadyReason":  "Required RPC worker \u0027rpc-endpoint-1\u0027 is UNAVAILABLE"
+                                                      },
+    "Case 4: Clean Restart Recovery":  {
+                                           "InferenceReady":  true,
+                                           "Status":  "PASS",
+                                           "ResponseText":  "2 + 2 equals 4."
+                                       },
+    "Case 5: Repeated Inference (5/5)":  {
+                                             "TotalTrials":  5,
+                                             "Status":  "PASS",
+                                             "SuccessCount":  5
+                                         },
+    "Case 6: Local CUDA Fallback":  {
+                                        "Status":  "PASS",
+                                        "ResponseText":  "2 + 2 equals 4."
+                                    },
+    "Case 7: Graceful Shutdown \u0026 Port Cleanup":  {
+                                                          "RpcPortFree":  true,
+                                                          "Status":  "PASS",
+                                                          "HttpPortFree":  true
+                                                      },
+    "Case 8: Zero-Layer Resilience \u0026 Required Enforcement":  {
+                                                                      "Rpc1AssignedLayers":  2,
+                                                                      "Status":  "PASS",
+                                                                      "Rpc0AssignedLayers":  0,
+                                                                      "RequiredWorkerLoss503":  true,
+                                                                      "ZeroWorkerLossInferenceSuccess":  true
+                                                                  }
+}

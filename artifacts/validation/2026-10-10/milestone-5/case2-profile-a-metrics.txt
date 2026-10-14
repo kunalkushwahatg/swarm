@@ -1,0 +1,81 @@
+# HELP swarm_requests_total Total number of HTTP requests
+# TYPE swarm_requests_total counter
+swarm_requests_total 0
+
+# HELP swarm_active_requests Number of active requests
+# TYPE swarm_active_requests gauge
+swarm_active_requests 0
+
+# HELP swarm_worker_state_total Number of workers by state
+# TYPE swarm_worker_state_total gauge
+swarm_worker_state_total{state="ready"} 3
+swarm_worker_state_total{state="busy"} 0
+swarm_worker_state_total{state="error"} 0
+
+# HELP swarm_backend_model_buffer_bytes Model buffer size allocated on backend in bytes
+# TYPE swarm_backend_model_buffer_bytes gauge
+swarm_backend_model_buffer_bytes{backend="CPU",type="cpu"} 1695736136
+swarm_backend_model_buffer_bytes{backend="CUDA0",type="local_cuda"} 304590356
+swarm_backend_model_buffer_bytes{backend="RPC0",type="loopback_rpc"} 0
+swarm_backend_model_buffer_bytes{backend="RPC1",type="loopback_rpc"} 98650030
+
+# HELP swarm_backend_kv_buffer_bytes KV cache buffer size allocated on backend in bytes
+# TYPE swarm_backend_kv_buffer_bytes gauge
+swarm_backend_kv_buffer_bytes{backend="CPU",type="cpu"} 69206016
+swarm_backend_kv_buffer_bytes{backend="CUDA0",type="local_cuda"} 2097152
+swarm_backend_kv_buffer_bytes{backend="RPC0",type="loopback_rpc"} 0
+swarm_backend_kv_buffer_bytes{backend="RPC1",type="loopback_rpc"} 4194304
+
+# HELP swarm_backend_compute_buffer_bytes Compute buffer size allocated on backend in bytes
+# TYPE swarm_backend_compute_buffer_bytes gauge
+swarm_backend_compute_buffer_bytes{backend="CPU",type="cpu"} 10496246
+swarm_backend_compute_buffer_bytes{backend="CUDA0",type="local_cuda"} 315359232
+swarm_backend_compute_buffer_bytes{backend="RPC0",type="loopback_rpc"} 0
+swarm_backend_compute_buffer_bytes{backend="RPC1",type="loopback_rpc"} 78129398
+
+# HELP swarm_backend_layers_assigned Number of model layers assigned to backend
+# TYPE swarm_backend_layers_assigned gauge
+swarm_backend_layers_assigned{backend="CPU",type="cpu"} 33
+swarm_backend_layers_assigned{backend="CUDA0",type="local_cuda"} 2
+swarm_backend_layers_assigned{backend="RPC0",type="loopback_rpc"} 0
+swarm_backend_layers_assigned{backend="RPC1",type="loopback_rpc"} 2
+
+# HELP swarm_policy_configured Placement policy mode (1 if active)
+# TYPE swarm_policy_configured gauge
+swarm_policy_configured{policy="resource_aware"} 1
+
+# HELP swarm_backend_virtual_budget_bytes Configured virtual memory budget in bytes
+# TYPE swarm_backend_virtual_budget_bytes gauge
+swarm_backend_virtual_budget_bytes{backend="CUDA0"} 4000000000
+swarm_backend_virtual_budget_bytes{backend="RPC0"} 50000000
+swarm_backend_virtual_budget_bytes{backend="RPC1"} 500000000
+
+# HELP swarm_backend_policy_match Whether actual placement matched prediction (1=match, 0=mismatch)
+# TYPE swarm_backend_policy_match gauge
+swarm_backend_policy_match{backend="CUDA0"} 1
+swarm_backend_policy_match{backend="RPC0"} 1
+swarm_backend_policy_match{backend="RPC1"} 1
+
+# HELP swarm_inference_tokens_generated_total Total number of tokens generated
+# TYPE swarm_inference_tokens_generated_total counter
+swarm_inference_tokens_generated_total 0
+
+# HELP swarm_inference_tokens_per_second Token generation rate of the most recent request
+# TYPE swarm_inference_tokens_per_second gauge
+swarm_inference_tokens_per_second 0.000000
+
+# HELP swarm_inference_prompt_eval_duration_seconds Total prompt evaluation time in seconds
+# TYPE swarm_inference_prompt_eval_duration_seconds summary
+swarm_inference_prompt_eval_duration_seconds_sum 0.000000
+swarm_inference_prompt_eval_duration_seconds_count 0
+
+# HELP swarm_inference_token_gen_duration_seconds Total token generation time in seconds
+# TYPE swarm_inference_token_gen_duration_seconds summary
+swarm_inference_token_gen_duration_seconds_sum 0.000000
+swarm_inference_token_gen_duration_seconds_count 0
+
+# HELP swarm_inference_duration_seconds Total inference time in seconds
+# TYPE swarm_inference_duration_seconds summary
+swarm_inference_duration_seconds_sum 0.000000
+swarm_inference_duration_seconds_count 0
+

@@ -1,0 +1,8 @@
+"request","warmup","client_ms","rpc_cpu_delta_s","rpc_working_set_mb","curl_exit","answer","correct"
+"1","True","3520.15","3.1562","400.23","0","2 + 2 equals 4.","True"
+"2","True","4379.26","3.375","400.23","0","2 + 2 equals 4.","True"
+"3","False","4239.16","3.3906","400.23","0","2 + 2 equals 4.","True"
+"4","False","4158.61","3.5312","400.17","0","2 + 2 equals 4.","True"
+"5","False","4164.33","3.4688","400.17","0","2 + 2 equals 4.","True"
+"6","False","4133.12","3.6719","400.17","0","2 + 2 equals 4.","True"
+"7","False","4134.09","3.6875","400.17","0","2 + 2 equals 4.","True"

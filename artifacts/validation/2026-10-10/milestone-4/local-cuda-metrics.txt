@@ -1,0 +1,57 @@
+# HELP swarm_requests_total Total number of HTTP requests
+# TYPE swarm_requests_total counter
+swarm_requests_total 1
+
+# HELP swarm_active_requests Number of active requests
+# TYPE swarm_active_requests gauge
+swarm_active_requests 0
+
+# HELP swarm_worker_state_total Number of workers by state
+# TYPE swarm_worker_state_total gauge
+swarm_worker_state_total{state="ready"} 0
+swarm_worker_state_total{state="busy"} 0
+swarm_worker_state_total{state="error"} 0
+
+# HELP swarm_backend_model_buffer_bytes Model buffer size allocated on backend in bytes
+# TYPE swarm_backend_model_buffer_bytes gauge
+swarm_backend_model_buffer_bytes{backend="CPU",type="cpu"} 175028306
+swarm_backend_model_buffer_bytes{backend="CUDA0",type="local_cuda"} 1923958702
+
+# HELP swarm_backend_kv_buffer_bytes KV cache buffer size allocated on backend in bytes
+# TYPE swarm_backend_kv_buffer_bytes gauge
+swarm_backend_kv_buffer_bytes{backend="CPU",type="cpu"} 0
+swarm_backend_kv_buffer_bytes{backend="CUDA0",type="local_cuda"} 75497472
+
+# HELP swarm_backend_compute_buffer_bytes Compute buffer size allocated on backend in bytes
+# TYPE swarm_backend_compute_buffer_bytes gauge
+swarm_backend_compute_buffer_bytes{backend="CPU",type="cpu"} 0
+swarm_backend_compute_buffer_bytes{backend="CUDA0",type="local_cuda"} 10496246
+
+# HELP swarm_backend_layers_assigned Number of model layers assigned to backend
+# TYPE swarm_backend_layers_assigned gauge
+swarm_backend_layers_assigned{backend="CPU",type="cpu"} 0
+swarm_backend_layers_assigned{backend="CUDA0",type="local_cuda"} 37
+
+# HELP swarm_inference_tokens_generated_total Total number of tokens generated
+# TYPE swarm_inference_tokens_generated_total counter
+swarm_inference_tokens_generated_total 8
+
+# HELP swarm_inference_tokens_per_second Token generation rate of the most recent request
+# TYPE swarm_inference_tokens_per_second gauge
+swarm_inference_tokens_per_second 16.908915
+
+# HELP swarm_inference_prompt_eval_duration_seconds Total prompt evaluation time in seconds
+# TYPE swarm_inference_prompt_eval_duration_seconds summary
+swarm_inference_prompt_eval_duration_seconds_sum 0.460716
+swarm_inference_prompt_eval_duration_seconds_count 1
+
+# HELP swarm_inference_token_gen_duration_seconds Total token generation time in seconds
+# TYPE swarm_inference_token_gen_duration_seconds summary
+swarm_inference_token_gen_duration_seconds_sum 0.473123
+swarm_inference_token_gen_duration_seconds_count 1
+
+# HELP swarm_inference_duration_seconds Total inference time in seconds
+# TYPE swarm_inference_duration_seconds summary
+swarm_inference_duration_seconds_sum 0.947686
+swarm_inference_duration_seconds_count 1
+

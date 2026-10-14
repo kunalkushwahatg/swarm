@@ -1,0 +1,68 @@
+{
+  "timestamp": "2026-10-13T15:22:32.246Z",
+  "installed_exe": "C:\\Users\\kunal\\AppData\\Local\\Swarm Desktop\\app.exe",
+  "dom": {
+    "rootExists": true,
+    "rootChildCount": 1,
+    "title": "ui",
+    "headings": [
+      "Coordinator Offline — Reconnection in Progress"
+    ],
+    "navButtons": [
+      "Chat",
+      "Devices",
+      "Session",
+      "Settings",
+      "Retry Now",
+      "Distributed Cluster (Default)\nRPC worker :50052 + Coordinator :8080 (1.5 GB RAM)",
+      "Standalone CUDA (Opt-in)\nSingle process CUDA offload (1.0 GB RAM / 3.1 GB VRAM)",
+      "Start Engine",
+      "View CLI Scripts",
+      "Options (256 max tokens)",
+      "Send"
+    ],
+    "hasChat": true,
+    "hasSettings": true,
+    "hasSession": true,
+    "hasDevices": true,
+    "snippet": "●—●—●\nSwarm\nqwen2.5-3b-instruct-q4_k_m.official-check.gguf\n2,048-token window\nCluster (Default)\nNot running\nChat\nDevices\nSession\nSettings\nSession Chat\nCoordinator Offline — Reconnection in Progress\nThe interface cannot reach the Swarm coordinator at 127.0.0.1:8080.\nNext check in 3s\nRetry Now\nOutage Status\nOffline\nConsecutive Failures\n1 checks failed\nLast Known Model\nqwen2.5-3b-instruct-q4_k_m (37 "
+  },
+  "ipc": {
+    "supervisor_status": {
+      "is_active": true,
+      "job_object": true,
+      "cluster_state": "Stopped"
+    },
+    "profile_count": 2,
+    "coord_executable": {
+      "name": "swarm_node.exe",
+      "path": "C:\\Users\\kunal\\AppData\\Local\\Swarm Desktop\\bin\\swarm_node.exe",
+      "exists": true,
+      "is_file": true
+    },
+    "rpc_executable": {
+      "name": "ggml-rpc-server.exe",
+      "path": "C:\\Users\\kunal\\AppData\\Local\\Swarm Desktop\\bin\\ggml-rpc-server.exe",
+      "exists": true,
+      "is_file": true
+    },
+    "model_file": {
+      "path": "C:\\Users\\kunal\\AppData\\Local\\Swarm Desktop\\models\\qwen2.5-3b-instruct-q4_k_m.official-check.gguf",
+      "exists": true,
+      "is_file": true,
+      "extension_valid": true,
+      "size_bytes": 2104932768,
+      "recorded_sha256_provenance": "626B4A6678B86442240E33DF819E00132D3BA7DDDFE1CDC4FBB18E0A9615C62D",
+      "fresh_verification_performed": false,
+      "verification_note": "File presence confirmed. File existence does not prove binary compatibility or model loadability. SHA-256 provenance displayed from Milestone 12 baseline without re-hashing."
+    },
+    "dll_directories": [
+      {
+        "path": "C:\\Users\\kunal\\AppData\\Local\\Swarm Desktop\\bin",
+        "exists": true,
+        "is_directory": true
+      }
+    ]
+  },
+  "passed": true
+}

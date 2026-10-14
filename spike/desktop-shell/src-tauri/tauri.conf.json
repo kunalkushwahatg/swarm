@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Swarm Desktop",
+  "version": "0.1.0",
+  "identifier": "com.swarm.desktop",
+  "build": {
+    "frontendDist": "../../../ui/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Swarm Desktop",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "msi"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../../../build-cuda/swarm_node.exe": "bin/swarm_node.exe",
+      "../../../dist/swarm-worker-windows-x64/ggml-rpc-server.exe": "bin/ggml-rpc-server.exe",
+      "../../../build-cuda/ggml-base.dll": "bin/ggml-base.dll",
+      "../../../build-cuda/ggml-cpu.dll": "bin/ggml-cpu.dll",
+      "../../../build-cuda/ggml-cuda.dll": "bin/ggml-cuda.dll",
+      "../../../build-cuda/ggml-rpc.dll": "bin/ggml-rpc.dll",
+      "../../../build-cuda/ggml.dll": "bin/ggml.dll",
+      "../../../build-cuda/llama.dll": "bin/llama.dll",
+      "../../../dist/cuda-redist/cudart64_12.dll": "bin/cudart64_12.dll",
+      "../../../dist/cuda-redist/cublas64_12.dll": "bin/cublas64_12.dll",
+      "../../../dist/cuda-redist/cublasLt64_12.dll": "bin/cublasLt64_12.dll"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      },
+      "wix": {
+        "language": "en-US"
+      }
+    }
+  }
+}

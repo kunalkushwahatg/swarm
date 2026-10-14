@@ -1,0 +1,96 @@
+# =============================================================================
+# Swarm Project Root .gitignore
+# Excludes compiled binaries, build trees, model files, caches, secrets,
+# temporary test traces, and OS-specific files while preserving core source.
+# =============================================================================
+
+# --- OS / IDE / Machine Specific ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+.claude/
+.cph/
+
+# --- Secrets, API Tokens & Credentials ---
+secrets/
+*.token
+*.key
+*.pem
+token.txt
+
+# --- AI Model Files (GGUF & Binaries) ---
+# Models are large (>2GB) and must be acquired separately per README instructions.
+models/*.gguf
+models/*.bin
+*.gguf
+*.bin
+
+# --- C++ / CMake Build Artifacts ---
+build/
+build-*/
+build_*/
+temp_*/
+/bin/
+/obj/
+*.obj
+*.o
+*.lib
+*.a
+*.exp
+*.ilk
+*.pdb
+*.idb
+*.exe
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+Makefile
+*.vcxproj
+*.vcxproj.filters
+*.sln
+
+# --- Rust / Cargo / Tauri Build Artifacts ---
+**/target/
+**/src-tauri/target/
+**/gen/schemas/
+Cargo.lock.bk
+
+# --- Node / Vite / Frontend Artifacts ---
+**/node_modules/
+**/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Packaged Vendor Distributions & Large Redistributables ---
+dist/cuda-redist/
+dist/*.zip
+dist/swarm-computer-b-transfer/
+dist/swarm-worker-windows-x64/
+
+# --- Logs, Temporary Traces, Dumps ---
+*.log
+*.sse
+*.pid
+out.txt
+output.txt
+gateway_out.txt
+gateway_output.txt
+nmake_test.txt
+vcvars_output.txt
+summary.txt
+server.log
+nul
+
+# --- Historical Local Backups ---
+backups/
+
+# --- Scratchpad ---
+scratch/

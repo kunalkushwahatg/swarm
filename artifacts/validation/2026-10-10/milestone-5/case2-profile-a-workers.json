@@ -1,0 +1,94 @@
+[
+    {
+        "assigned_layer_ranges":  [
+
+                                  ],
+        "assigned_layers":  [
+
+                            ],
+        "backend_id":  "RPC0",
+        "backend_type":  "loopback_rpc",
+        "compute_buffer_bytes":  0,
+        "device_name":  "RPC0",
+        "host":  "127.0.0.1",
+        "id":  "rpc-endpoint-0",
+        "inference_count":  0,
+        "is_inference_active":  false,
+        "is_loopback":  true,
+        "kv_buffer_bytes":  0,
+        "last_error":  "",
+        "last_health_check":  0,
+        "log_derived":  false,
+        "measurement_status":  "unavailable",
+        "memory_free_bytes":  1876185088,
+        "memory_scope":  "shared_host",
+        "memory_total_bytes":  8422543360,
+        "model_buffer_bytes":  0,
+        "port":  50052,
+        "started_at":  0,
+        "state":  "READY",
+        "type":  "REMOTE_RPC"
+    },
+    {
+        "assigned_layer_ranges":  [
+                                      [
+                                          33,
+                                          34
+                                      ]
+                                  ],
+        "assigned_layers":  [
+                                33,
+                                34
+                            ],
+        "backend_id":  "RPC1",
+        "backend_type":  "loopback_rpc",
+        "compute_buffer_bytes":  78129398,
+        "device_name":  "RPC1",
+        "host":  "127.0.0.1",
+        "id":  "rpc-endpoint-1",
+        "inference_count":  0,
+        "is_inference_active":  false,
+        "is_loopback":  true,
+        "kv_buffer_bytes":  4194304,
+        "last_error":  "",
+        "last_health_check":  0,
+        "log_derived":  true,
+        "measurement_status":  "observed",
+        "memory_free_bytes":  1876180992,
+        "memory_scope":  "shared_host",
+        "memory_total_bytes":  8422543360,
+        "model_buffer_bytes":  98650030,
+        "port":  50053,
+        "started_at":  0,
+        "state":  "READY",
+        "type":  "REMOTE_RPC"
+    },
+    {
+        "assigned_layer_ranges":  [
+
+                                  ],
+        "assigned_layers":  [
+
+                            ],
+        "backend_id":  "local-cuda-0",
+        "backend_type":  "LOCAL_CUDA",
+        "device_name":  "CUDA0",
+        "device_type":  1,
+        "host":  "127.0.0.1",
+        "id":  "local-cuda-0",
+        "inference_count":  0,
+        "is_inference_active":  false,
+        "is_loopback":  false,
+        "last_error":  "",
+        "last_health_check":  0,
+        "log_derived":  false,
+        "measurement_status":  "unavailable",
+        "memory_free_bytes":  3526780519,
+        "memory_scope":  "unspecified",
+        "memory_total_bytes":  4294836224,
+        "port":  0,
+        "started_at":  0,
+        "state":  "READY",
+        "type":  "LOCAL_CUDA"
+    }
+]

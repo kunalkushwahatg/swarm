@@ -1,0 +1,12 @@
+{
+    "Mode":  "LocalRpc",
+    "CoordinatorPid":  17152,
+    "CoordinatorPort":  8080,
+    "CoordinatorBind":  "127.0.0.1",
+    "CoordinatorPath":  "C:\\Users\\kunal\\OneDrive\\Desktop\\swarm\\build-cuda\\swarm_node.exe",
+    "RpcWorkerPid":  26048,
+    "RpcWorkerPort":  50052,
+    "RpcWorkerBind":  "127.0.0.1",
+    "RpcWorkerPath":  "C:\\Users\\kunal\\OneDrive\\Desktop\\swarm\\dist\\swarm-worker-windows-x64\\ggml-rpc-server.exe",
+    "StartedAt":  "2026-10-11 13:04:13"
+}

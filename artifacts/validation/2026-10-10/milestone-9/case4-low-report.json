@@ -1,0 +1,12 @@
+﻿{
+    "schema_version":  "1.0",
+    "agent_version":  "1.0.0",
+    "node_id":  "node-rpc-127.0.0.1-50052",
+    "endpoint":  "127.0.0.1:50052",
+    "status":  "READY",
+    "ram":  {
+                "available_bytes":  209715200,
+                "total_bytes":  1073741824
+            },
+    "timestamp_ms":  1791644800041
+}

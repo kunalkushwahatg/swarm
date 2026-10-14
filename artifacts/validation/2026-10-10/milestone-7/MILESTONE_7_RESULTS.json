@@ -1,0 +1,52 @@
+{
+    "Step 0: Offline Unit Tests":  {
+                                       "Status":  "PASS",
+                                       "ExitCode":  0
+                                   },
+    "Case 1: Live Node Inventory Discovery":  {
+                                                  "HostRamDeduplicated":  true,
+                                                  "InferenceText":  "2 + 2 equals 4.",
+                                                  "GatewayRamProvenance":  "measured",
+                                                  "TotalNodes":  3,
+                                                  "GatewayVramProvenance":  "measured",
+                                                  "Status":  "PASS"
+                                              },
+    "Case 2: Resource-Aware Inventory with Provenance":  {
+                                                             "RequiredNodes":  2,
+                                                             "Rpc1IsRequired":  true,
+                                                             "Rpc0IsRequired":  false,
+                                                             "UnrequiredNodes":  1,
+                                                             "Rpc1AssignedLayers":  2,
+                                                             "Status":  "PASS",
+                                                             "Rpc0BudgetProvenance":  "configured_budget"
+                                                         },
+    "Case 3: Node Disconnect Visibility in Live /nodes":  {
+                                                              "Status":  "PASS",
+                                                              "InferenceWithZeroWorkerDown":  true,
+                                                              "Rpc0ConnectionState":  "UNAVAILABLE",
+                                                              "Rpc0IsReady":  false
+                                                          },
+    "Case 4: Prometheus Node Metrics":  {
+                                            "Status":  "PASS",
+                                            "HasNodesOnline":  true,
+                                            "HasNodesTotal":  true,
+                                            "HasNodesRequired":  true
+                                        },
+    "Case 5: Backward Compatibility with Existing Endpoints":  {
+                                                                   "Status":  "PASS",
+                                                                   "WorkersCount":  3,
+                                                                   "HealthStatusOk":  true,
+                                                                   "BackendsCount":  4
+                                                               },
+    "Case 6: Local CUDA Fallback Regression":  {
+                                                   "Status":  "PASS",
+                                                   "GatewayLayersAssigned":  37,
+                                                   "InferenceText":  "2 + 2 equals 4."
+                                               },
+    "Case 7: Graceful Teardown \u0026 Port Verification":  {
+                                                               "Status":  "PASS",
+                                                               "RpcPort1Free":  true,
+                                                               "RpcPort0Free":  true,
+                                                               "HttpPortFree":  true
+                                                           }
+}

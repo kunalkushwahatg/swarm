@@ -1,0 +1,21 @@
+﻿data: {"choices":[{"delta":{"content":"2"}}],"id":1}
+
+data: {"choices":[{"delta":{"content":" +"}}],"id":1}
+
+data: {"choices":[{"delta":{"content":" "}}],"id":1}
+
+data: {"choices":[{"delta":{"content":"2"}}],"id":1}
+
+data: {"choices":[{"delta":{"content":" equals"}}],"id":1}
+
+data: {"choices":[{"delta":{"content":" "}}],"id":1}
+
+data: {"choices":[{"delta":{"content":"4"}}],"id":1}
+
+data: {"choices":[{"delta":{"content":"."}}],"id":1}
+
+data: {"choices":[{"delta":{}}],"id":1,"timings":{"gen_ms":1751.8579,"prompt_eval_ms":4764.8267,"tokens_generated":8,"tokens_per_sec":4.566580428698012,"total_ms":6533.5607}}
+
+data: [DONE]
+
+

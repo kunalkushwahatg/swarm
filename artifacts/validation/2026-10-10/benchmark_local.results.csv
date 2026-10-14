@@ -1,0 +1,8 @@
+"request","warmup","client_ms","curl_exit","answer","correct"
+"1","True","995.7477","0","2 + 2 equals 4.","True"
+"2","True","513.7593","0","2 + 2 equals 4.","True"
+"3","False","551.4714","0","2 + 2 equals 4.","True"
+"4","False","477.5074","0","2 + 2 equals 4.","True"
+"5","False","484.7971","0","2 + 2 equals 4.","True"
+"6","False","463.3131","0","2 + 2 equals 4.","True"
+"7","False","467.9177","0","2 + 2 equals 4.","True"

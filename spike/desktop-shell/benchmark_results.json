@@ -1,0 +1,99 @@
+{
+    "BenchmarkDate":  "2026-10-12 03:23:24",
+    "Host":  {
+                 "TauriCli":  "2.12.2",
+                 "Rust":  "rustc 1.98.1 (48a229cea 2026-09-01)",
+                 "WebView2Runtime":  "154.0.4258.62",
+                 "OS":  "Microsoft Windows NT 10.0.26200.0",
+                 "TauriCore":  "2.12.3"
+             },
+    "Latency":  {
+                    "AcceptanceTargetMs":  1200,
+                    "Pass":  true,
+                    "LaunchToWindowInteractiveMs":  529
+                },
+    "Memory":  {
+                   "NativeShellWorkingSetMb":  49.17,
+                   "NativeShellPass":  true,
+                   "TotalCombinedTreeMb":  177.35,
+                   "WebView2HelperCount":  2,
+                   "AcceptanceTargetMb":  60,
+                   "WebView2WorkingSetMb":  128.18
+               },
+    "Coordinator":  {
+                        "Online":  true
+                    },
+    "Diagnostics":  {
+                        "status":  "completed",
+                        "tests":  {
+                                      "health":  {
+                                                     "ok":  true,
+                                                     "status":  200,
+                                                     "durationMs":  23,
+                                                     "inferenceReady":  true,
+                                                     "modelLoaded":  true,
+                                                     "modelPath":  "C:\\Users\\kunal\\OneDrive\\Desktop\\swarm\\models\\qwen2.5-3b-instruct-q4_k_m.official-check.gguf"
+                                                 },
+                                      "restEndpoints":  {
+                                                            "backendsOk":  true,
+                                                            "backendsCount":  3,
+                                                            "nodesOk":  true,
+                                                            "nodesCount":  2,
+                                                            "metricsOk":  true,
+                                                            "metricsLength":  3979
+                                                        },
+                                      "streaming":  {
+                                                        "ok":  true,
+                                                        "totalChunksReceived":  4,
+                                                        "contentGenerated":  "Hi there",
+                                                        "firstChunkMs":  5419,
+                                                        "lastChunkMs":  6578,
+                                                        "totalDurationMs":  6582,
+                                                        "isIncrementalArrival":  true,
+                                                        "chunkArrivalIntervalsMs":  [
+                                                                                        5419,
+                                                                                        6393,
+                                                                                        6574,
+                                                                                        6578
+                                                                                    ],
+                                                        "terminalTimings":  {
+                                                                                "gen_ms":  1155.8105,
+                                                                                "prompt_eval_ms":  5278.154,
+                                                                                "tokens_generated":  2,
+                                                                                "tokens_per_sec":  1.730387464034978,
+                                                                                "total_ms":  6450.6755
+                                                                            }
+                                                    },
+                                      "cancellation":  {
+                                                           "ok":  true,
+                                                           "abortedCleanly":  true,
+                                                           "message":  "Request canceled"
+                                                       },
+                                      "connectionErrorHandling":  {
+                                                                      "ok":  true,
+                                                                      "rejectedGracefully":  true,
+                                                                      "errorDetected":  true
+                                                                  }
+                                  },
+                        "streamingChunks":  [
+                                                {
+                                                    "index":  1,
+                                                    "timeMs":  5419,
+                                                    "text":  "Hi"
+                                                },
+                                                {
+                                                    "index":  2,
+                                                    "timeMs":  6393,
+                                                    "text":  " there"
+                                                }
+                                            ],
+                        "timings":  null,
+                        "errors":  [
+
+                                   ],
+                        "completedAt":  "2026-10-11T21:53:16.390Z"
+                    },
+    "Artifacts":  {
+                      "Screenshot":  "C:\\Users\\kunal\\OneDrive\\Desktop\\swarm\\artifacts\\spike_screenshots\\tauri_spike_live_window.png"
+                  }
+}
