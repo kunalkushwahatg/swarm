@@ -32,12 +32,36 @@ static void print_usage(const char* prog) {
               << "  --help                  Show this help message\n";
 }
 
-static bool parse_url(const std::string& url, std::string& host, int& port, std::string& path_prefix) {
+static bool parse_unsigned_arg(const std::string& value, uint64_t max_value, uint64_t& out) {
+    if (value.empty()) {
+        return false;
+    }
+    try {
+        size_t consumed = 0;
+        const unsigned long long parsed = std::stoull(value, &consumed);
+        if (consumed != value.size() || parsed > max_value) {
+            return false;
+        }
+        out = static_cast<uint64_t>(parsed);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+static bool parse_url(const std::string& url, std::string& host, int& port,
+                      std::string& path_prefix, bool& is_https) {
     std::string s = url;
+    is_https = false;
     if (s.rfind("http://", 0) == 0) {
         s = s.substr(7);
     } else if (s.rfind("https://", 0) == 0) {
+        is_https = true;
         s = s.substr(8);
+    } else {
+        // Reject bare host:port and unknown schemes instead of silently
+        // treating them as plaintext HTTP.
+        return false;
     }
 
     size_t slash = s.find('/');
@@ -47,14 +71,14 @@ static bool parse_url(const std::string& url, std::string& host, int& port, std:
     size_t colon = host_port.find(':');
     if (colon != std::string::npos) {
         host = host_port.substr(0, colon);
-        try {
-            port = std::stoi(host_port.substr(colon + 1));
-        } catch (...) {
+        uint64_t parsed_port = 0;
+        if (!parse_unsigned_arg(host_port.substr(colon + 1), 65535, parsed_port) || parsed_port == 0) {
             return false;
         }
+        port = static_cast<int>(parsed_port);
     } else {
         host = host_port;
-        port = 80;
+        port = is_https ? 443 : 80;
     }
     return !host.empty() && port > 0 && port <= 65535;
 }
@@ -84,9 +108,19 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--endpoint" && i + 1 < argc) {
             endpoint = argv[++i];
         } else if (arg == "--rpc-port" && i + 1 < argc) {
-            rpc_port = static_cast<uint16_t>(std::stoi(argv[++i]));
+            uint64_t parsed = 0;
+            if (!parse_unsigned_arg(argv[++i], 65535, parsed) || parsed == 0) {
+                std::cerr << "[Agent Error] --rpc-port must be between 1 and 65535." << std::endl;
+                return 1;
+            }
+            rpc_port = static_cast<uint16_t>(parsed);
         } else if (arg == "--interval-ms" && i + 1 < argc) {
-            interval_ms = static_cast<uint32_t>(std::stoi(argv[++i]));
+            uint64_t parsed = 0;
+            if (!parse_unsigned_arg(argv[++i], 0xFFFFFFFFULL, parsed) || parsed == 0) {
+                std::cerr << "[Agent Error] --interval-ms must be a positive 32-bit integer." << std::endl;
+                return 1;
+            }
+            interval_ms = static_cast<uint32_t>(parsed);
         } else if (arg == "--once") {
             once = true;
         } else if (arg == "--version") {
@@ -134,8 +168,19 @@ int main(int argc, char* argv[]) {
     std::string coord_host;
     int coord_port = 8080;
     std::string path_prefix;
-    if (!parse_url(coordinator_url, coord_host, coord_port, path_prefix)) {
-        std::cerr << "[Agent Error] Failed to parse coordinator URL: " << coordinator_url << std::endl;
+    bool coordinator_uses_https = false;
+    if (!parse_url(coordinator_url, coord_host, coord_port, path_prefix, coordinator_uses_https)) {
+        std::cerr << "[Agent Error] Failed to parse coordinator URL: " << coordinator_url
+                  << " (expected http://host[:port])" << std::endl;
+        return 1;
+    }
+    if (coordinator_uses_https) {
+        // This build links cpp-httplib without OpenSSL. Silently treating an
+        // https:// URL as plaintext HTTP would leak the Bearer token, so fail
+        // closed instead of downgrading the transport.
+        std::cerr << "[Agent Error] HTTPS coordinator URLs are not supported by this build. "
+                  << "Refusing to downgrade to plaintext HTTP; use a local http:// coordinator "
+                  << "or an encrypted tunnel." << std::endl;
         return 1;
     }
 

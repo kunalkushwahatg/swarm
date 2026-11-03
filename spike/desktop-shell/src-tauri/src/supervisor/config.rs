@@ -83,12 +83,46 @@ pub fn is_loopback_port_available(port: u16) -> bool {
     }
 }
 
-/// Checks whether a local service is actively listening on a port by attempting a TCP connect.
-pub fn is_port_listening(port: u16) -> bool {
-    use std::net::TcpStream;
+/// Maps wildcard bind addresses to a connectable loopback address.
+fn probe_host(host: &str) -> &str {
+    match host.trim() {
+        "" | "0.0.0.0" | "::" | "[::]" | "*" => "127.0.0.1",
+        h => h,
+    }
+}
+
+/// Checks whether a service is actively listening on the given host and port.
+/// Probes the actual bind address instead of assuming loopback, so LAN-bound
+/// workers are detectable.
+pub fn is_host_port_listening(host: &str, port: u16) -> bool {
+    use std::net::{TcpStream, ToSocketAddrs};
     use std::time::Duration;
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
+    let Ok(addrs) = (probe_host(host), port).to_socket_addrs() else {
+        return false;
+    };
+    addrs.into_iter().any(|addr| {
+        TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
+    })
+}
+
+/// Checks whether the given host and port can be bound.
+pub fn is_host_port_available(host: &str, port: u16) -> bool {
+    let host = match host.trim() {
+        "" | "*" => "0.0.0.0",
+        h => h,
+    };
+    match TcpListener::bind((host, port)) {
+        Ok(listener) => {
+            drop(listener);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// Checks whether a local service is actively listening on a loopback port.
+pub fn is_port_listening(port: u16) -> bool {
+    is_host_port_listening("127.0.0.1", port)
 }
 
 /// Validates that a proposed model path is a non-empty, existing `.gguf` file.
@@ -178,11 +212,34 @@ pub fn probe_coordinator_health_detailed(port: u16, path: &str, timeout_ms: u64)
             path, port
         );
         if stream.write_all(request.as_bytes()).is_ok() {
+            // A single read() often returns only the response headers when
+            // the body arrives in a second TCP segment. Drain the response
+            // (bounded) so inference/model fields are actually parsed.
+            let mut response_bytes = Vec::new();
             let mut response_buf = [0u8; 4096];
-            if let Ok(bytes_read) = stream.read(&mut response_buf) {
+            loop {
+                match stream.read(&mut response_buf) {
+                    Ok(0) => break,
+                    Ok(bytes_read) => {
+                        response_bytes.extend_from_slice(&response_buf[..bytes_read]);
+                        if response_bytes.len() >= 1024 * 1024 {
+                            break;
+                        }
+                    }
+                    Err(e)
+                        if e.kind() == std::io::ErrorKind::WouldBlock
+                            || e.kind() == std::io::ErrorKind::TimedOut =>
+                    {
+                        break;
+                    }
+                    Err(_) => break,
+                }
+            }
+
+            {
                 let duration_ms = t0.elapsed().as_millis() as u64;
-                if bytes_read > 0 {
-                    let resp_str = String::from_utf8_lossy(&response_buf[..bytes_read]).to_string();
+                if !response_bytes.is_empty() {
+                    let resp_str = String::from_utf8_lossy(&response_bytes).to_string();
                     let mut status_code = None;
                     if let Some(first_line) = resp_str.lines().next() {
                         let parts: Vec<&str> = first_line.split_whitespace().collect();
@@ -337,8 +394,8 @@ impl RuntimeProfile {
     /// Technical description of the profile architecture and allocation.
     pub fn description(&self) -> &'static str {
         match self {
-            RuntimeProfile::DefaultCluster => "Dual-process distributed cluster with coordinator and local RPC worker (SWARM_USE_RPC=1, SWARM_N_GPU_LAYERS=4, SWARM_CTX_SIZE=2048, ports 8080 & 50052, 1,500 MB RAM guard).",
-            RuntimeProfile::LowMemoryCudaStandalone => "Isolated single-process coordinator offloading all 37 model layers to local CUDA (SWARM_USE_RPC=0, SWARM_N_GPU_LAYERS=-1, SWARM_CTX_SIZE=512, port 8080, 1,000 MB RAM guard, 3,100 MiB VRAM guard).",
+            RuntimeProfile::DefaultCluster => "Multi-device distributed cluster pooling local GPU and remote network workers with dynamic layer allocation (SWARM_USE_RPC=1).",
+            RuntimeProfile::LowMemoryCudaStandalone => "Runs entirely on the host GPU and CPU without external network dependencies (SWARM_USE_RPC=0), optimized for standalone execution.",
         }
     }
 
@@ -349,6 +406,11 @@ impl RuntimeProfile {
 
     /// Required minimum free physical RAM in MB before launch is permitted.
     pub fn required_ram_mb(&self) -> u64 {
+        if let Ok(val) = std::env::var("SWARM_MIN_RAM_MB") {
+            if let Ok(n) = val.parse::<u64>() {
+                return n;
+            }
+        }
         match self {
             RuntimeProfile::DefaultCluster => 1500,
             RuntimeProfile::LowMemoryCudaStandalone => 1000,

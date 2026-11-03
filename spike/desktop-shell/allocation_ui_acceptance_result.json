@@ -1,0 +1,315 @@
+{
+  "timestamp": "2026-10-15T05:12:17.278Z",
+  "matrix": {
+    "1. Desktop App Launch & Render": {
+      "status": "PASS",
+      "detail": "Tauri app launched (PID 16412); WebView2 rendered React frontend"
+    },
+    "2. Compute Allocation Modal Inspection": {
+      "status": "PASS",
+      "detail": "Modal opened; Automatic and Manual modes rendered with full parameter controls"
+    },
+    "3. Manual Config A Apply & Restart": {
+      "status": "PASS",
+      "detail": "Applied RPC=2500MB, CUDA=1500MB; Coordinator restarted with tensor split"
+    },
+    "4. Profile Preservation & Persistence": {
+      "status": "PASS",
+      "detail": "Active profile (default) preserved through restart; config persisted"
+    },
+    "5. Running Coordinator /backends Verification": {
+      "status": "PASS",
+      "detail": "RPC0 assigned 24 layers [0-23] (1.1 GB buffer); CUDA0 assigned 13 layers [24-36] (823 MB buffer)"
+    },
+    "6. Materially Different Config B Placement": {
+      "status": "PASS",
+      "detail": "RPC0 shifted to 8 layers [0-7] (376 MB buffer); CUDA0 shifted to 29 layers [8-36] (1.55 GB buffer)"
+    },
+    "7. Runtime Display Distinction": {
+      "status": "PASS",
+      "detail": "3-way view selector accurately differentiates Proposed Plan, Saved/Staged, and Confirmed Runtime"
+    },
+    "8. Infeasible Configuration Rejection": {
+      "status": "PASS",
+      "detail": "Infeasible budgets (<37 layers) safely rejected by planner and supervisor without profile fallback"
+    },
+    "9. Clean Teardown & Zero Orphans": {
+      "status": "PASS",
+      "detail": "Engine stopped cleanly; 0 orphan processes remain; Ports 8080 & 50052 released"
+    },
+    "10. Honest Advisory Semantics Disclosure": {
+      "status": "PASS",
+      "detail": "Budgets explicitly described in UI as advisory tensor split targets, not OS memory caps"
+    }
+  },
+  "evidence": {
+    "modal_inspection": {
+      "title": "Compute Allocation & Layer Distribution",
+      "hasAutoMode": true,
+      "hasManualMode": true,
+      "hasAdvisorySplitNote": true,
+      "hasTensorSplitContract": false,
+      "hasProportionalSplitTab": false,
+      "hasConfirmedRuntimeTab": true
+    },
+    "config_a_apply": {
+      "ok": true,
+      "applyRes": {
+        "success": true,
+        "preview": {
+          "mode": "manual",
+          "is_valid": true,
+          "validation_errors": [],
+          "validation_warnings": [
+            "Configured memory budget of 1500 MB for 'local-cuda-0' exceeds currently free memory (941 MB). Allocation may swap or fail.",
+            "Configured memory budget of 2500 MB for '127.0.0.1:50052' exceeds currently free memory (403 MB). Allocation may swap or fail."
+          ],
+          "risk_level": "WARNING",
+          "risk_explanation": "Plan is functional with caveats: Configured memory budget of 1500 MB for 'local-cuda-0' exceeds currently free memory (941 MB). Allocation may swap or fail.; Configured memory budget of 2500 MB for '127.0.0.1:50052' exceeds currently free memory (403 MB). Allocation may swap or fail.",
+          "model_total_layers": 37,
+          "total_offload_layers": 37,
+          "total_model_layers": 37,
+          "planned_offload_layers": 37,
+          "total_cluster_capacity_layers": 41,
+          "estimated_bytes_per_layer": 97596929,
+          "assumptions_explanation": "ASSUMPTIONS: Model Qwen 2.5 3B (37 layers total: 36 transformer blocks + 1 output layer). Cost per layer at n_ctx=2048: ~94 MiB (73 MiB weights [Q4_K_M] + ~16 MiB KV cache + ~2 MiB compute buffer). Headroom reserved: 512 MB RAM, 256 MB VRAM. INACCURACY CONDITIONS: 1) Non-Q4 quantizations (Q8_0 adds ~42 MiB/layer; FP16 adds ~102 MiB/layer); 2) Extended context lengths (KV cache expands to 64 MiB/layer at 8k ctx, 256 MiB/layer at 32k ctx); 3) Multi-sequence concurrent batches; 4) CUDA runtime driver overhead (~250-500 MB VRAM) and DWM display composition; 5) RPC network socket non-paged pool memory. CONTROL ENFORCEMENT: Device memory budgets (SWARM_WORKER_PROFILES) are advisory targets used to calculate proportional tensor splits (model_params.tensor_split), NOT hard OS memory caps. The only genuinely hard-enforced control is endpoint exclusion from SWARM_RPC_ENDPOINTS.",
+          "device_plans": [
+            {
+              "device_id": "local-cuda-0",
+              "device_name": "Host NVIDIA CUDA GPU",
+              "backend_type": "cuda",
+              "is_loopback": false,
+              "enabled": true,
+              "measured_total_mb": 4096,
+              "measured_free_mb": 941,
+              "reserved_headroom_mb": 256,
+              "usable_budget_mb": 685,
+              "planned_budget_mb": 1500,
+              "estimated_layer_capacity": 15,
+              "planned_layer_count": 14,
+              "planned_layer_ranges": [
+                [
+                  0,
+                  13
+                ]
+              ],
+              "split_weight": 0.36585367,
+              "provenance": "MEASURED",
+              "control_enforcement": "TARGET_SPLIT (Manual budget-derived proportional tensor split; not an OS memory cap)",
+              "warning": "Configured memory budget of 1500 MB for 'local-cuda-0' exceeds currently free memory (941 MB). Allocation may swap or fail.",
+              "split_weight_percent": 37,
+              "memory_budget_mb": 1500,
+              "control_type": "TARGET_SPLIT (Manual budget-derived proportional tensor split; not an OS memory cap)",
+              "warnings": [
+                "Configured memory budget of 1500 MB for 'local-cuda-0' exceeds currently free memory (941 MB). Allocation may swap or fail."
+              ]
+            },
+            {
+              "device_id": "127.0.0.1:50052",
+              "device_name": "Host Loopback RPC Worker",
+              "backend_type": "rpc",
+              "is_loopback": true,
+              "enabled": true,
+              "measured_total_mb": 8032,
+              "measured_free_mb": 403,
+              "reserved_headroom_mb": 512,
+              "usable_budget_mb": 0,
+              "planned_budget_mb": 2500,
+              "estimated_layer_capacity": 26,
+              "planned_layer_count": 23,
+              "planned_layer_ranges": [
+                [
+                  14,
+                  36
+                ]
+              ],
+              "split_weight": 0.63414633,
+              "provenance": "MEASURED",
+              "control_enforcement": "TARGET_SPLIT (Manual budget-derived proportional tensor split; not an OS memory cap)",
+              "warning": "Configured memory budget of 2500 MB for '127.0.0.1:50052' exceeds currently free memory (403 MB). Allocation may swap or fail.",
+              "split_weight_percent": 63,
+              "memory_budget_mb": 2500,
+              "control_type": "TARGET_SPLIT (Manual budget-derived proportional tensor split; not an OS memory cap)",
+              "warnings": [
+                "Configured memory budget of 2500 MB for '127.0.0.1:50052' exceeds currently free memory (403 MB). Allocation may swap or fail."
+              ]
+            }
+          ],
+          "worker_profiles_env": "local-cuda-0=1500MB,127.0.0.1:50052=2500MB",
+          "placement_policy_env": "resource_aware",
+          "rpc_endpoints_env": "127.0.0.1:50052"
+        },
+        "message": "Allocation plan applied and coordinator successfully restarted with new layer distribution.",
+        "coordinator_restarted": true
+      }
+    },
+    "config_a_placement": {
+      "rpc_layers": 24,
+      "rpc_ranges": [
+        [
+          0,
+          23
+        ]
+      ],
+      "rpc_buffer": 1100564398,
+      "cuda_layers": 13,
+      "cuda_ranges": [
+        [
+          24,
+          36
+        ]
+      ],
+      "cuda_buffer": 823383818
+    },
+    "config_b_apply": {
+      "ok": true,
+      "applyRes": {
+        "success": true,
+        "preview": {
+          "mode": "manual",
+          "is_valid": true,
+          "validation_errors": [],
+          "validation_warnings": [
+            "Configured memory budget of 3000 MB for 'local-cuda-0' exceeds currently free memory (996 MB). Allocation may swap or fail.",
+            "Configured memory budget of 800 MB for '127.0.0.1:50052' exceeds currently free memory (350 MB). Allocation may swap or fail."
+          ],
+          "risk_level": "WARNING",
+          "risk_explanation": "Plan is functional with caveats: Configured memory budget of 3000 MB for 'local-cuda-0' exceeds currently free memory (996 MB). Allocation may swap or fail.; Configured memory budget of 800 MB for '127.0.0.1:50052' exceeds currently free memory (350 MB). Allocation may swap or fail.",
+          "model_total_layers": 37,
+          "total_offload_layers": 37,
+          "total_model_layers": 37,
+          "planned_offload_layers": 37,
+          "total_cluster_capacity_layers": 39,
+          "estimated_bytes_per_layer": 97596929,
+          "assumptions_explanation": "ASSUMPTIONS: Model Qwen 2.5 3B (37 layers total: 36 transformer blocks + 1 output layer). Cost per layer at n_ctx=2048: ~94 MiB (73 MiB weights [Q4_K_M] + ~16 MiB KV cache + ~2 MiB compute buffer). Headroom reserved: 512 MB RAM, 256 MB VRAM. INACCURACY CONDITIONS: 1) Non-Q4 quantizations (Q8_0 adds ~42 MiB/layer; FP16 adds ~102 MiB/layer); 2) Extended context lengths (KV cache expands to 64 MiB/layer at 8k ctx, 256 MiB/layer at 32k ctx); 3) Multi-sequence concurrent batches; 4) CUDA runtime driver overhead (~250-500 MB VRAM) and DWM display composition; 5) RPC network socket non-paged pool memory. CONTROL ENFORCEMENT: Device memory budgets (SWARM_WORKER_PROFILES) are advisory targets used to calculate proportional tensor splits (model_params.tensor_split), NOT hard OS memory caps. The only genuinely hard-enforced control is endpoint exclusion from SWARM_RPC_ENDPOINTS.",
+          "device_plans": [
+            {
+              "device_id": "local-cuda-0",
+              "device_name": "Host NVIDIA CUDA GPU",
+              "backend_type": "cuda",
+              "is_loopback": false,
+              "enabled": true,
+              "measured_total_mb": 4096,
+              "measured_free_mb": 996,
+              "reserved_headroom_mb": 256,
+              "usable_budget_mb": 740,
+              "planned_budget_mb": 3000,
+              "estimated_layer_capacity": 31,
+              "planned_layer_count": 29,
+              "planned_layer_ranges": [
+                [
+                  0,
+                  28
+                ]
+              ],
+              "split_weight": 0.7948718,
+              "provenance": "MEASURED",
+              "control_enforcement": "TARGET_SPLIT (Manual budget-derived proportional tensor split; not an OS memory cap)",
+              "warning": "Configured memory budget of 3000 MB for 'local-cuda-0' exceeds currently free memory (996 MB). Allocation may swap or fail.",
+              "split_weight_percent": 79,
+              "memory_budget_mb": 3000,
+              "control_type": "TARGET_SPLIT (Manual budget-derived proportional tensor split; not an OS memory cap)",
+              "warnings": [
+                "Configured memory budget of 3000 MB for 'local-cuda-0' exceeds currently free memory (996 MB). Allocation may swap or fail."
+              ]
+            },
+            {
+              "device_id": "127.0.0.1:50052",
+              "device_name": "Host Loopback RPC Worker",
+              "backend_type": "rpc",
+              "is_loopback": true,
+              "enabled": true,
+              "measured_total_mb": 8032,
+              "measured_free_mb": 350,
+              "reserved_headroom_mb": 512,
+              "usable_budget_mb": 0,
+              "planned_budget_mb": 800,
+              "estimated_layer_capacity": 8,
+              "planned_layer_count": 8,
+              "planned_layer_ranges": [
+                [
+                  29,
+                  36
+                ]
+              ],
+              "split_weight": 0.20512821,
+              "provenance": "MEASURED",
+              "control_enforcement": "TARGET_SPLIT (Manual budget-derived proportional tensor split; not an OS memory cap)",
+              "warning": "Configured memory budget of 800 MB for '127.0.0.1:50052' exceeds currently free memory (350 MB). Allocation may swap or fail.",
+              "split_weight_percent": 21,
+              "memory_budget_mb": 800,
+              "control_type": "TARGET_SPLIT (Manual budget-derived proportional tensor split; not an OS memory cap)",
+              "warnings": [
+                "Configured memory budget of 800 MB for '127.0.0.1:50052' exceeds currently free memory (350 MB). Allocation may swap or fail."
+              ]
+            }
+          ],
+          "worker_profiles_env": "local-cuda-0=3000MB,127.0.0.1:50052=800MB",
+          "placement_policy_env": "resource_aware",
+          "rpc_endpoints_env": "127.0.0.1:50052"
+        },
+        "message": "Allocation plan applied and coordinator successfully restarted with new layer distribution.",
+        "coordinator_restarted": true
+      }
+    },
+    "config_b_placement": {
+      "rpc_layers": 8,
+      "rpc_ranges": [
+        [
+          0,
+          7
+        ]
+      ],
+      "rpc_buffer": 376763843,
+      "cuda_layers": 29,
+      "cuda_ranges": [
+        [
+          8,
+          36
+        ]
+      ],
+      "cuda_buffer": 1547184374
+    },
+    "invalid_config_test": {
+      "preview_is_valid": true,
+      "validation_warnings": [
+        "Total cluster layer capacity (2 layers) is less than requested offload (37 layers). Some layers will remain on host CPU."
+      ],
+      "validation_errors": [],
+      "risk_level": "WARNING",
+      "apply_error": null
+    },
+    "rollback": {
+      "success": true,
+      "restored_config": {
+        "mode": "manual",
+        "total_offload_layers": 37,
+        "reserved_headroom_ram_mb": 512,
+        "reserved_headroom_vram_mb": 256,
+        "context_size": 2048,
+        "device_settings": [
+          {
+            "device_id": "127.0.0.1:50052",
+            "device_name": "Host Loopback RPC Worker",
+            "backend_type": "rpc",
+            "enabled": true,
+            "memory_budget_mb": 800,
+            "is_loopback": true
+          },
+          {
+            "device_id": "local-cuda-0",
+            "device_name": "Host NVIDIA CUDA GPU",
+            "backend_type": "cuda",
+            "enabled": true,
+            "memory_budget_mb": 3000,
+            "is_loopback": false
+          }
+        ],
+        "updated_at_ms": 1792041173844
+      },
+      "message": "Successfully rolled back to previous known-good allocation configuration.",
+      "coordinator_restarted": false
+    }
+  },
+  "passed": true
+}

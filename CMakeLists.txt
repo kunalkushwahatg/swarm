@@ -12,6 +12,10 @@ add_subdirectory(llama.cpp)
 add_executable(swarm_node
 	main.cpp
 	worker.cpp
+	inference_engine.cpp
+	coordinator_http.cpp
+	metrics_collector.cpp
+	rpc_telemetry.cpp
 	llama.cpp/vendor/cpp-httplib/httplib.cpp
 )
 
@@ -21,6 +25,9 @@ target_include_directories(swarm_node PRIVATE
 	llama.cpp/vendor/nlohmann
 )
 target_link_libraries(swarm_node PRIVATE llama ggml-rpc)
+if (WIN32)
+	target_link_libraries(swarm_node PRIVATE ws2_32)
+endif()
 
 # 4. Worker Resource Reporting Agent (Milestone 8)
 add_executable(swarm_agent
@@ -85,6 +92,26 @@ target_include_directories(test_agent_and_inventory PRIVATE
 if (WIN32)
 	target_link_libraries(test_agent_and_inventory PRIVATE ws2_32 crypt32 dxgi)
 endif()
+
+# The unit tests use assert() for validation, including calls whose side
+# effects are part of the test (e.g. ingest_agent_report). Release builds set
+# NDEBUG, which turns every assert into a no-op and silently skips those calls.
+# Keep assertions active for test targets regardless of build type.
+set(SWARM_TEST_TARGETS
+	test_security
+	test_rpc_health
+	test_policy
+	test_dynamic_policy
+	test_node_inventory
+	test_agent_and_inventory
+)
+foreach(_test_target IN LISTS SWARM_TEST_TARGETS)
+	if (MSVC)
+		target_compile_options(${_test_target} PRIVATE /UNDEBUG)
+	else()
+		target_compile_options(${_test_target} PRIVATE -UNDEBUG)
+	endif()
+endforeach()
 
 
 

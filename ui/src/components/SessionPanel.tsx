@@ -1,493 +1,491 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSwarmSession } from "../hooks/useSwarmSession";
 import { PlacementRibbon } from "./PlacementRibbon";
-import { fmtBytes } from "../lib/utils";
+import { fmtBytes, friendlyModelTitle } from "../lib/utils";
 import { calculateBufferComposition } from "../lib/tensorBuffer";
 import { Cpu, Info, Sliders } from "lucide-react";
 import { ComputeAllocationModal } from "./ComputeAllocationModal";
+import { modelsApi } from "../lib/modelsApi";
+import { supervisor, type WorkerHardwareTelemetry } from "../lib/supervisor";
 
 export function SessionPanel() {
   const session = useSwarmSession(3000);
   const [showAllocationModal, setShowAllocationModal] = useState(false);
+  const [modelLayerCount, setModelLayerCount] = useState<number | null>(null);
+  const [hardware, setHardware] = useState<WorkerHardwareTelemetry | null>(null);
+
+  useEffect(() => {
+    if (supervisor.isDesktop) {
+      supervisor.getWorkerHardware().then((hw) => {
+        if (hw) setHardware(hw);
+      }).catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    modelsApi.getLibrary().then((state) => {
+      const active = state.installed_models.find((m) => m.id === state.selected_model_id);
+      if (active?.gguf?.block_count) {
+        setModelLayerCount(active.gguf.block_count + 1);
+      }
+    }).catch(() => {});
+  }, [session.modelPath]);
+
+  const effectiveTotalLayers = session.totalLayers > 0
+    ? session.totalLayers
+    : (modelLayerCount || (session.modelPath?.toLowerCase().includes("360m") ? 33 : session.modelPath?.toLowerCase().includes("1b") ? 17 : 0));
 
   const backends = session.ribbonSegments;
   const memory = session.memoryAccounting;
   const hostGpu = session.hostDevice?.vramTotalBytes ? session.hostDevice : null;
 
+  const isRunning = session.state === "ready" || session.state === "generating";
+  const isStopped = session.state === "not_running";
+
+  const friendlyName = friendlyModelTitle(session.modelPath || session.modelName);
+
+  // Dynamic placement explanation
+  const placementExplanation = (() => {
+    if (isStopped) {
+      return "Model layers will be assigned to available devices once the engine starts.";
+    }
+    if (!backends || backends.length === 0) {
+      return "Awaiting active layer placement confirmation from coordinator…";
+    }
+    const parts = backends
+      .filter((b) => b.layerCount > 0)
+      .map((b) => `${b.layerCount} ${b.layerCount === 1 ? "layer" : "layers"} on ${b.deviceName} (${b.backendType.toUpperCase()})`);
+
+    if (parts.length === 0) {
+      return "All model layers are currently executing on Host CPU memory.";
+    }
+    return `Swarm distributes ${parts.join(" and ")}.`;
+  })();
+
+  const vramTotal = hostGpu?.vramTotalBytes || (hardware?.total_vram_mb ? hardware.total_vram_mb * 1024 * 1024 : 0);
+  const vramUsed = hostGpu?.vramUsedBytes || (hardware && hardware.total_vram_mb != null && hardware.available_vram_mb != null ? Math.max(0, (hardware.total_vram_mb - hardware.available_vram_mb) * 1024 * 1024) : 0);
+  const vramFree = Math.max(0, vramTotal - vramUsed);
+  const vramPct = vramTotal > 0 ? Math.min(100, Math.round((vramUsed / vramTotal) * 100)) : 0;
+
+  const ramTotal = (memory.hostRamTotalBytes > 0 ? memory.hostRamTotalBytes : (hardware?.total_ram_mb ? hardware.total_ram_mb * 1024 * 1024 : 0));
+  const ramAvail = (memory.hostRamAvailableBytes > 0 ? memory.hostRamAvailableBytes : (hardware?.available_ram_mb ? hardware.available_ram_mb * 1024 * 1024 : 0));
+  const ramUsed = Math.max(0, ramTotal - ramAvail);
+  const ramPct = ramTotal > 0 ? Math.min(100, Math.round((ramUsed / ramTotal) * 100)) : 0;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24, width: "100%", maxWidth: 960 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", maxWidth: 1040 }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h1 className="page-title">
-            Session
-          </h1>
-          <div className="page-subtitle">
-            Active model, layer placement, memory accounting, and runtime performance
+          <h1 className="page-title">Session Telemetry</h1>
+          <div className="page-subtitle" style={{ marginTop: 4 }}>
+            Live memory allocation and model layer distribution
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-          <span
-            className={`dot ${
-              session.state === "ready"
-                ? "dot-ok"
-                : session.state === "generating"
-                ? "dot-busy"
-                : session.state === "paused"
-                ? "dot-warn"
-                : "dot-error"
-            }`}
-          />
-          <span style={{ fontSize: 13, fontWeight: 500 }}>{session.stateLabel}</span>
-        </div>
-      </div>
-
-      {/* 1. Model Identity Row */}
-      <div
-        className="card-flat"
-        style={{
-          padding: "16px 20px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 12,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Cpu size={18} color="var(--color-accent)" />
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>{session.modelName}</div>
-            <div className="mono" style={{ fontSize: 11, color: "var(--color-text-2)", marginTop: 2, wordBreak: "break-all" }}>
-              {session.modelPath}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 20, fontSize: 12.5 }}>
-          <div>
-            <span style={{ color: "var(--color-text-2)" }}>Layers: </span>
-            <strong className="mono">{session.totalLayers} total</strong>
-          </div>
-          <div>
-            <span style={{ color: "var(--color-text-2)" }}>Context: </span>
-            <strong className="mono">{session.contextWindow.toLocaleString()} tokens</strong>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. Model Layer Placement Ribbon */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div className="section-label">
-            Model Placement Across Devices
-          </div>
-          <button
-            onClick={() => setShowAllocationModal(true)}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 5,
-              fontSize: 12,
+              gap: 6,
               padding: "4px 10px",
-              background: "rgba(14, 165, 233, 0.08)",
-              border: "1px solid rgba(14, 165, 233, 0.3)",
-              color: "#0ea5e9",
-              borderRadius: "var(--radius, 6px)",
-              cursor: "pointer",
+              borderRadius: "var(--radius-sm)",
+              background: "var(--color-surface-subtle)",
+              border: "1px solid var(--color-border)",
+              fontSize: 12,
               fontWeight: 500,
             }}
+          >
+            <span
+              className={`dot ${
+                isRunning
+                  ? "dot-ok"
+                  : session.state === "generating"
+                  ? "dot-busy"
+                  : session.state === "paused"
+                  ? "dot-warn"
+                  : "dot-idle"
+              }`}
+            />
+            <span>{isStopped ? "Engine Standby" : session.stateLabel}</span>
+          </div>
+
+          <button
+            id="session-adjust-allocation-btn"
+            type="button"
+            className="btn-primary"
+            onClick={() => setShowAllocationModal(true)}
+            style={{ padding: "6px 14px", fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}
           >
             <Sliders size={13} />
             <span>Adjust Allocation Plan</span>
           </button>
         </div>
+      </div>
+
+      {/* Model & Context Identity Card */}
+      <div
+        className="card animate-fade-in"
+        style={{
+          padding: "16px 20px",
+          background: "var(--color-surface)",
+          border: "1px solid var(--color-border)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 14,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "var(--radius-sm)",
+              background: "var(--color-accent-subtle)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--color-accent)",
+            }}
+          >
+            <Cpu size={18} />
+          </div>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: "var(--color-text)" }}>
+              {friendlyName}
+            </div>
+            <div className="mono" style={{ fontSize: 11, color: "var(--color-text-3)", marginTop: 2, wordBreak: "break-all" }}>
+              {session.modelPath}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 20, fontSize: 12 }}>
+          <div>
+            <span style={{ color: "var(--color-text-3)" }}>Model Layers: </span>
+            <strong className="mono" style={{ color: "var(--color-text)" }}>
+              {effectiveTotalLayers > 0 ? `${effectiveTotalLayers} total` : "Calculated on start"}
+            </strong>
+          </div>
+          <div>
+            <span style={{ color: "var(--color-text-3)" }}>Context Window: </span>
+            <strong className="mono" style={{ color: "var(--color-accent)" }}>{session.contextWindow.toLocaleString()} tokens</strong>
+          </div>
+          <div>
+            <span style={{ color: "var(--color-text-3)" }}>Engine State: </span>
+            <strong style={{ color: isRunning ? "var(--color-ok)" : "var(--color-text-2)" }}>
+              {isRunning ? "Active" : "Standby"}
+            </strong>
+          </div>
+        </div>
+      </div>
+
+      {/* Model Layer Placement Ribbon */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span className="section-label" style={{ fontWeight: 600 }}>Model Placement Across Devices</span>
+          <span className="mono" style={{ fontSize: 11, color: "var(--color-text-3)" }}>
+            {isStopped ? "Planned Split" : "Confirmed Runtime Split"}
+          </span>
+        </div>
 
         <PlacementRibbon
           segments={session.ribbonSegments}
-          totalLayers={session.totalLayers}
+          totalLayers={effectiveTotalLayers}
           showCaption={true}
           isOffline={session.isCoordinatorOffline}
         />
-      </div>
 
-      {/* 3. Tensor Buffer Allocation Table & Composition Bars (B.6) */}
-      <div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, flexWrap: "wrap", gap: 6 }}>
-          <div className="section-label">
-            Tensor Buffer Allocations by Processor
-          </div>
-          {session.isCoordinatorOffline && (
-            <span className="badge badge-offline" style={{ fontSize: 10.5 }}>
-              Cached buffer allocations — status unverified while offline
-            </span>
-          )}
-        </div>
-        <div className="caption-text" style={{ fontSize: 11.5, color: "var(--color-text-3)", marginBottom: 10 }}>
-          Inference engine tensor buffers (model weights, KV-cache, compute scratch). Distinct from OS physical RAM and driver VRAM.
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {backends.map((b, idx) => {
-            const composition = calculateBufferComposition(
-              b.modelBufferBytes,
-              b.kvBufferBytes,
-              b.computeBufferBytes
-            );
-
-            return (
-              <div
-                key={idx}
-                className="card-flat"
-                style={{
-                  padding: "14px 16px",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 10,
-                }}
-              >
-                {/* Processor Info Header */}
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "baseline",
-                    flexWrap: "wrap",
-                    gap: 8,
-                  }}
-                >
-                  <div>
-                    <span style={{ fontWeight: 600, fontSize: 13.5, color: "var(--color-text)" }}>
-                      {b.deviceName}
-                    </span>
-                    <span className="k" style={{ marginLeft: 6, fontSize: 12 }}>
-                      ({b.backendType})
-                    </span>
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px 12px", fontSize: 12 }}>
-                    <div>
-                      <span style={{ color: "var(--color-text-2)" }}>Layers: </span>
-                      <strong className="mono">{b.layerCount}</strong>
-                      <span className="k" style={{ marginLeft: 4 }}>({b.rangeLabel})</span>
-                    </div>
-                    <div>
-                      <span style={{ color: "var(--color-text-2)" }}>Measured Total: </span>
-                      <strong className="mono">{fmtBytes(composition.totalBytes)}</strong>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tensor Buffer Composition Bar */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11 }}>
-                    <span style={{ fontWeight: 600, color: "var(--color-text-2)", letterSpacing: "0.01em" }}>
-                      Tensor Buffer Composition (Observed)
-                    </span>
-                    <span className="mono" style={{ fontSize: 10.5, color: "var(--color-text-3)" }}>
-                      {session.isCoordinatorOffline
-                        ? "Cached offline (unverified)"
-                        : b.logDerived
-                        ? "Log-derived (GGML engine)"
-                        : b.measurementStatus === "observed"
-                        ? "API-reported buffer allocation"
-                        : b.measurementStatus || "Reported allocation"}
-                    </span>
-                  </div>
-
-                  {composition.isZeroTotal ? (
-                    <div className="buffer-bar-track buffer-bar-empty">
-                      <span style={{ fontSize: 11, color: "var(--color-text-3)", padding: "0 8px" }}>
-                        {composition.statusText || "No tensor buffers allocated"}
-                      </span>
-                    </div>
-                  ) : (
-                    <div
-                      className="buffer-bar-track"
-                      role="img"
-                      aria-label={`Tensor buffer composition for ${b.deviceName}: Model weights ${composition.modelPct.toFixed(1)}%, KV Cache ${composition.kvPct.toFixed(1)}%, Compute scratch ${composition.computePct.toFixed(1)}%`}
-                    >
-                      {composition.modelPct > 0 && (
-                        <div
-                          className="buffer-slice slice-model"
-                          style={{ width: `${composition.modelPct}%` }}
-                          title={`Model weights buffer: ${fmtBytes(composition.modelBytes ?? 0)} (${composition.modelPct.toFixed(1)}%)`}
-                        />
-                      )}
-                      {composition.kvPct > 0 && (
-                        <div
-                          className="buffer-slice slice-kv"
-                          style={{ width: `${composition.kvPct}%` }}
-                          title={`KV-cache buffer: ${fmtBytes(composition.kvBytes ?? 0)} (${composition.kvPct.toFixed(1)}%)`}
-                        />
-                      )}
-                      {composition.computePct > 0 && (
-                        <div
-                          className="buffer-slice slice-compute"
-                          style={{ width: `${composition.computePct}%` }}
-                          title={`Compute buffer: ${fmtBytes(composition.computeBytes ?? 0)} (${composition.computePct.toFixed(1)}%)`}
-                        />
-                      )}
-                    </div>
-                  )}
-
-                  {/* Accessible Legend & Measured Byte Values */}
-                  <div className="buffer-legend-grid">
-                    <div className="buffer-legend-item">
-                      <span className="buffer-legend-dot slice-model" />
-                      <span className="buffer-legend-label">Model weights buffer:</span>
-                      <span className="mono buffer-legend-val">
-                        {composition.modelBytes != null
-                          ? `${fmtBytes(composition.modelBytes)} (${composition.modelPct.toFixed(1)}%)`
-                          : "Unmeasured"}
-                      </span>
-                    </div>
-                    <div className="buffer-legend-item">
-                      <span className="buffer-legend-dot slice-kv" />
-                      <span className="buffer-legend-label">KV-cache buffer:</span>
-                      <span className="mono buffer-legend-val">
-                        {composition.kvBytes != null
-                          ? `${fmtBytes(composition.kvBytes)} (${composition.kvPct.toFixed(1)}%)`
-                          : "Unmeasured"}
-                      </span>
-                    </div>
-                    <div className="buffer-legend-item">
-                      <span className="buffer-legend-dot slice-compute" />
-                      <span className="buffer-legend-label">Compute buffer:</span>
-                      <span className="mono buffer-legend-val">
-                        {composition.computeBytes != null
-                          ? `${fmtBytes(composition.computeBytes)} (${composition.computePct.toFixed(1)}%)`
-                          : "Unmeasured"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Why this split explanation */}
+        {/* Dynamic placement rationale card */}
         <div
-          className="well-sunken"
           style={{
-            marginTop: 14,
+            padding: "10px 14px",
+            background: "var(--color-surface-subtle)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius-sm)",
             fontSize: 12,
-            lineHeight: 1.55,
+            lineHeight: 1.5,
             color: "var(--color-text-2)",
             display: "flex",
-            gap: 8,
             alignItems: "flex-start",
+            gap: 8,
           }}
         >
           <Info size={15} color="var(--color-accent)" style={{ flexShrink: 0, marginTop: 2 }} />
           <div>
-            <strong>Why this split?</strong> Swarm offloads the last 3 layers to host GPU (CUDA0 VRAM)
-            and 1 layer to the RPC test helper, leaving 33 base layers on Host CPU.
-            Placement is calculated at model load and remains fixed throughout the entire session.
+            <strong style={{ color: "var(--color-text)", marginRight: 4 }}>Placement Rationale:</strong>
+            {placementExplanation}
           </div>
         </div>
       </div>
 
-      {/* 4. Physical Memory Accounting */}
-      <div>
-        <div className="section-label" style={{ marginBottom: 8 }}>
-          Host Physical Memory &amp; Headroom
-        </div>
-
-        <div className="card-flat" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
-              <span>
-                <strong>Host Physical RAM</strong> <span className="k">(OS-reported via system telemetry)</span>
-              </span>
-              <span className="mono" style={{ color: memory.isBelowReserve ? "var(--color-warn)" : "var(--color-text)" }}>
-                {fmtBytes(memory.hostRamAvailableBytes)} free now / {fmtBytes(memory.hostRamTotalBytes)} total
-              </span>
-            </div>
-
-            <div className="memory-reserve-track">
-              <div
-                className="memory-reserve-fill"
-                style={{
-                  width: `${Math.min(
-                    ((memory.hostRamTotalBytes - memory.hostRamAvailableBytes) / memory.hostRamTotalBytes) * 100,
-                    100
-                  )}%`,
-                }}
-              />
-              <div
-                className="memory-reserve-tick"
-                style={{
-                  left: `${Math.max(
-                    ((memory.hostRamTotalBytes - memory.reserveBytes) / memory.hostRamTotalBytes) * 100,
-                    10
-                  )}%`,
-                }}
-              />
-            </div>
-
-            <div style={{ fontSize: 12, color: memory.isBelowReserve ? "var(--color-warn)" : "var(--color-text-2)", marginTop: 8 }}>
-              {memory.reserveWarningText} Loopback helper memory is deduplicated with host RAM.
-            </div>
-          </div>
-
-          {hostGpu?.vramTotalBytes != null && (
-            <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                <span><strong>Dedicated GPU VRAM</strong> <span className="k">(OS/Driver-reported hardware usage)</span></span>
-                <span className="mono" style={{ color: "var(--color-accent)" }}>
-                  {fmtBytes(hostGpu.vramUsedBytes || 0)} used / {fmtBytes(hostGpu.vramTotalBytes)} total
-                </span>
-              </div>
-            </div>
+      {/* Tensor Buffer Allocation by Processor */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 6 }}>
+          <span className="section-label" style={{ fontWeight: 600 }}>
+            Tensor Buffer Allocations by Processor
+          </span>
+          {session.isCoordinatorOffline && (
+            <span className="badge badge-idle" style={{ fontSize: 10.5 }}>
+              Awaiting coordinator start
+            </span>
           )}
         </div>
+
+        {backends.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {backends.map((b, idx) => {
+              const composition = calculateBufferComposition(
+                b.modelBufferBytes,
+                b.kvBufferBytes,
+                b.computeBufferBytes
+              );
+
+              return (
+                <div
+                  key={idx}
+                  className="card"
+                  style={{
+                    padding: "14px 16px",
+                    background: "var(--color-surface)",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "var(--radius)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+                    <div>
+                      <span style={{ fontWeight: 600, fontSize: 13.5, color: "var(--color-text)" }}>
+                        {b.deviceName}
+                      </span>
+                      <span style={{ marginLeft: 6, fontSize: 12, color: "var(--color-text-3)" }}>
+                        ({b.backendType.toUpperCase()})
+                      </span>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 12 }}>
+                      <div>
+                        <span style={{ color: "var(--color-text-3)" }}>Layers: </span>
+                        <strong className="mono" style={{ color: "var(--color-text)" }}>{b.layerCount}</strong>
+                        <span style={{ marginLeft: 4, color: "var(--color-text-3)" }}>({b.rangeLabel})</span>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--color-text-3)" }}>Buffer Total: </span>
+                        <strong className="mono" style={{ color: "var(--color-accent)" }}>{fmtBytes(composition.totalBytes)}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Composition Bar */}
+                  <div style={{ display: "flex", height: 10, background: "var(--color-surface-subtle)", borderRadius: "var(--radius-sm)", overflow: "hidden", border: "1px solid var(--color-border)" }}>
+                    {composition.isZeroTotal ? (
+                      <div style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "var(--color-text-3)" }}>
+                        No tensor buffer allocated
+                      </div>
+                    ) : (
+                      <>
+                        {composition.modelPct > 0 && (
+                          <div
+                            style={{ width: `${composition.modelPct}%`, background: "var(--color-accent)" }}
+                            title={`Model weights: ${fmtBytes(composition.modelBytes ?? 0)} (${composition.modelPct.toFixed(1)}%)`}
+                          />
+                        )}
+                        {composition.kvPct > 0 && (
+                          <div
+                            style={{ width: `${composition.kvPct}%`, background: "var(--color-warn)" }}
+                            title={`KV cache: ${fmtBytes(composition.kvBytes ?? 0)} (${composition.kvPct.toFixed(1)}%)`}
+                          />
+                        )}
+                        {composition.computePct > 0 && (
+                          <div
+                            style={{ width: `${composition.computePct}%`, background: "var(--color-steel)" }}
+                            title={`Compute buffer: ${fmtBytes(composition.computeBytes ?? 0)} (${composition.computePct.toFixed(1)}%)`}
+                          />
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {/* Legend */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 11, color: "var(--color-text-2)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-accent)" }} />
+                      <span>Weights: <strong className="mono">{fmtBytes(composition.modelBytes ?? 0)}</strong></span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-warn)" }} />
+                      <span>KV-Cache: <strong className="mono">{fmtBytes(composition.kvBytes ?? 0)}</strong></span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-steel)" }} />
+                      <span>Compute: <strong className="mono">{fmtBytes(composition.computeBytes ?? 0)}</strong></span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div
+            className="card"
+            style={{
+              padding: "20px",
+              textAlign: "center",
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius)",
+              color: "var(--color-text-3)",
+              fontSize: 12,
+            }}
+          >
+            Tensor buffer allocations will display here once the engine starts.
+          </div>
+        )}
       </div>
 
-      {/* 5. Most Recent Inference Performance (B.4 item 5) */}
-      <div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
-          <div className="section-label">
-            Most Recent Inference Performance (Observed)
+      {/* Symmetric Physical Hardware Memory Accounting */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <span className="section-label" style={{ fontWeight: 600 }}>Physical Hardware Memory &amp; Headroom</span>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
+          {/* Host RAM Meter */}
+          <div
+            className="card"
+            style={{
+              padding: "16px",
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text)" }}>Host Physical RAM</span>
+              <span className="mono" style={{ fontSize: 12, color: memory.isBelowReserve ? "var(--color-warn)" : "var(--color-text)" }}>
+                {ramTotal > 0 ? `${fmtBytes(ramUsed)} / ${fmtBytes(ramTotal)} (${ramPct}%)` : "Unavailable"}
+              </span>
+            </div>
+
+            <div style={{ width: "100%", height: 8, background: "var(--color-surface-subtle)", borderRadius: 4, overflow: "hidden" }}>
+              <div
+                style={{
+                  height: "100%",
+                  width: `${ramPct}%`,
+                  background: memory.isBelowReserve ? "var(--color-warn)" : "var(--color-accent)",
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--color-text-3)" }}>
+              <span>{ramTotal > 0 ? `${fmtBytes(ramAvail)} available` : "RAM telemetry unavailable"}</span>
+              <span>1,024 MB reserved headroom</span>
+            </div>
           </div>
+
+          {/* Dedicated GPU VRAM Meter */}
+          <div
+            className="card"
+            style={{
+              padding: "16px",
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text)" }}>Dedicated GPU VRAM</span>
+              <span className="mono" style={{ fontSize: 12, color: "var(--color-cuda)" }}>
+                {vramTotal > 0 ? `${fmtBytes(vramUsed)} / ${fmtBytes(vramTotal)} (${vramPct}%)` : "Unavailable"}
+              </span>
+            </div>
+
+            <div style={{ width: "100%", height: 8, background: "var(--color-surface-subtle)", borderRadius: 4, overflow: "hidden" }}>
+              <div
+                style={{
+                  height: "100%",
+                  width: `${vramPct}%`,
+                  background: "var(--color-cuda)",
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--color-text-3)" }}>
+              <span>{vramTotal > 0 ? `${fmtBytes(vramFree)} free` : "VRAM telemetry unavailable"}</span>
+              <span>NVIDIA CUDA Device 0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Observed Inference Performance */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 6 }}>
+          <span className="section-label" style={{ fontWeight: 600 }}>Observed Inference Performance</span>
           {session.latestInference && (
-            <span className="caption-text" style={{ fontSize: 11 }}>
-              Single request measurement · Completed {new Date(session.latestInference.completed_at).toLocaleTimeString()}
+            <span className="mono" style={{ fontSize: 11, color: "var(--color-text-3)" }}>
+              Completed at {new Date(session.latestInference.completed_at).toLocaleTimeString()}
             </span>
           )}
         </div>
 
         {session.latestInference ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
-            {/* Generated Tokens */}
-            <div className="card-flat" style={{ padding: "14px" }}>
-              <span className="section-label">Generated Tokens</span>
-              <div className="mono-stat" style={{ marginTop: 4 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+            <div className="card" style={{ padding: "14px", background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+              <span style={{ fontSize: 11, color: "var(--color-text-3)" }}>Generated Tokens</span>
+              <div className="mono-stat" style={{ marginTop: 4, color: "var(--color-text)" }}>
                 {session.latestInference.tokens_generated}{" "}
-                <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-2)" }}>tokens</span>
+                <span style={{ fontSize: 11, color: "var(--color-text-2)" }}>tokens</span>
               </div>
-              <span className="caption-text" style={{ marginTop: 2, display: "block" }}>
-                Latest response token count
-              </span>
             </div>
 
-            {/* Generation Rate */}
-            <div className="card-flat" style={{ padding: "14px" }}>
-              <span className="section-label">Generation Rate</span>
-              <div className="mono-stat" style={{ marginTop: 4 }}>
-                {session.latestInference.tokens_per_sec != null ? (
-                  <>
-                    {session.latestInference.tokens_per_sec.toFixed(1)}{" "}
-                    <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-2)" }}>tok/s</span>
-                  </>
-                ) : (
-                  <span style={{ fontSize: 16, color: "var(--color-text-3)" }}>N/A tok/s</span>
-                )}
+            <div className="card" style={{ padding: "14px", background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+              <span style={{ fontSize: 11, color: "var(--color-text-3)" }}>Generation Speed</span>
+              <div className="mono-stat" style={{ marginTop: 4, color: "var(--color-accent)" }}>
+                {session.latestInference.tokens_per_sec != null ? session.latestInference.tokens_per_sec.toFixed(1) : "N/A"}{" "}
+                <span style={{ fontSize: 11, color: "var(--color-text-2)" }}>tok/s</span>
               </div>
-              <span className="caption-text" style={{ marginTop: 2, display: "block" }}>
-                Active token generation speed
-              </span>
             </div>
 
-            {/* Prompt Evaluation */}
-            <div className="card-flat" style={{ padding: "14px" }}>
-              <span className="section-label">Prompt Evaluation</span>
-              <div className="mono-stat" style={{ marginTop: 4 }}>
-                {session.latestInference.prompt_eval_ms != null ? (
-                  <>
-                    {session.latestInference.prompt_eval_ms >= 1000
-                      ? (session.latestInference.prompt_eval_ms / 1000).toFixed(2)
-                      : Math.round(session.latestInference.prompt_eval_ms)}{" "}
-                    <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-2)" }}>
-                      {session.latestInference.prompt_eval_ms >= 1000 ? "s" : "ms"}
-                    </span>
-                  </>
-                ) : (
-                  <span style={{ fontSize: 16, color: "var(--color-text-3)" }}>Unmeasured</span>
-                )}
+            <div className="card" style={{ padding: "14px", background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+              <span style={{ fontSize: 11, color: "var(--color-text-3)" }}>Prompt Evaluation</span>
+              <div className="mono-stat" style={{ marginTop: 4, color: "var(--color-text)" }}>
+                {session.latestInference.prompt_eval_ms != null
+                  ? `${(session.latestInference.prompt_eval_ms / 1000).toFixed(2)} s`
+                  : "Unmeasured"}
               </div>
-              <span className="caption-text" style={{ marginTop: 2, display: "block" }}>
-                Backend prompt ingestion duration
-              </span>
             </div>
 
-            {/* Time to First Content (Client Latency) */}
-            <div className="card-flat" style={{ padding: "14px" }}>
-              <span className="section-label">Time to First Content</span>
-              <div className="mono-stat" style={{ marginTop: 4 }}>
-                {session.latestInference.ttfc_ms != null ? (
-                  <>
-                    {session.latestInference.ttfc_ms >= 1000
-                      ? (session.latestInference.ttfc_ms / 1000).toFixed(2)
-                      : Math.round(session.latestInference.ttfc_ms)}{" "}
-                    <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-2)" }}>
-                      {session.latestInference.ttfc_ms >= 1000 ? "s" : "ms"}
-                    </span>
-                  </>
-                ) : (
-                  <span style={{ fontSize: 16, color: "var(--color-text-3)" }}>Unmeasured</span>
-                )}
+            <div className="card" style={{ padding: "14px", background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+              <span style={{ fontSize: 11, color: "var(--color-text-3)" }}>Time to First Content</span>
+              <div className="mono-stat" style={{ marginTop: 4, color: "var(--color-text)" }}>
+                {session.latestInference.ttfc_ms != null ? `${Math.round(session.latestInference.ttfc_ms)} ms` : "Unmeasured"}
               </div>
-              <span className="caption-text" style={{ marginTop: 2, display: "block" }}>
-                Client-observed initial stream latency
-              </span>
-            </div>
-
-            {/* Generation Duration (Backend) */}
-            <div className="card-flat" style={{ padding: "14px" }}>
-              <span className="section-label">Generation Duration</span>
-              <div className="mono-stat" style={{ marginTop: 4 }}>
-                {session.latestInference.gen_ms != null ? (
-                  <>
-                    {(session.latestInference.gen_ms / 1000).toFixed(2)}{" "}
-                    <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-2)" }}>s</span>
-                  </>
-                ) : (
-                  <span style={{ fontSize: 16, color: "var(--color-text-3)" }}>Unmeasured</span>
-                )}
-              </div>
-              <span className="caption-text" style={{ marginTop: 2, display: "block" }}>
-                Backend token generation phase
-              </span>
-            </div>
-
-            {/* Total Request Duration */}
-            <div className="card-flat" style={{ padding: "14px" }}>
-              <span className="section-label">Total Duration</span>
-              <div className="mono-stat" style={{ marginTop: 4 }}>
-                {session.latestInference.total_ms != null ? (
-                  <>
-                    {(session.latestInference.total_ms / 1000).toFixed(2)}{" "}
-                    <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-2)" }}>s</span>
-                  </>
-                ) : (
-                  <span style={{ fontSize: 16, color: "var(--color-text-3)" }}>Unmeasured</span>
-                )}
-              </div>
-              <span className="caption-text" style={{ marginTop: 2, display: "block" }}>
-                Whole-request backend latency
-              </span>
             </div>
           </div>
         ) : (
           <div
-            className="card-flat"
+            className="card"
             style={{
               padding: "16px 20px",
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius)",
               color: "var(--color-text-2)",
+              fontSize: 12.5,
             }}
           >
-            <div style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text)" }}>
-              Awaiting first inference run
-            </div>
-            <div style={{ fontSize: 12 }}>
-              Authoritative generation speed, prompt evaluation duration, and token counts will appear here after a prompt is completed in Chat.
-            </div>
+            <div style={{ fontWeight: 600, color: "var(--color-text)", marginBottom: 2 }}>Awaiting First Message</div>
+            <div>Send a message in Chat to view live speed and latency breakdown.</div>
           </div>
         )}
       </div>
@@ -500,4 +498,3 @@ export function SessionPanel() {
     </div>
   );
 }
-

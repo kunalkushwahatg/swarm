@@ -73,7 +73,7 @@ console.log("=== Testing B.6: Tensor Buffer Composition ===");
 // ─────────────────────────────────────────────────────────────
 // 2. Test B.4: Generation Timings Validation
 // ─────────────────────────────────────────────────────────────
-import { validateTimings, isValidTimingNumber } from "../ui/src/hooks/useSwarm.ts";
+import { validateTimings, isValidTimingNumber } from "../ui/src/lib/timings.ts";
 
 console.log("\n=== Testing B.4: Generation Timings Validation ===");
 

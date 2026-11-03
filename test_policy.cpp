@@ -180,6 +180,29 @@ void test_policy_evaluation_scenarios() {
     assert(!res.error_message.empty());
     std::cout << "[PASS] Scenario 5: Insufficient capacity error caught: " << res.error_message << std::endl;
   }
+
+  // Scenario 6: Explicit zero-layer offload is valid CPU-only placement.
+  // Previously an all-zero split was rejected as "zero capacity".
+  {
+    std::unordered_map<std::string, DeviceProfile> profiles;
+    profiles["127.0.0.1:50052"] = {"127.0.0.1:50052", 50ULL * 1024ULL * 1024ULL, true};
+    profiles["127.0.0.1:50053"] = {"127.0.0.1:50053", 50ULL * 1024ULL * 1024ULL, true};
+    profiles["local-cuda-0"] = {"local-cuda-0", 50ULL * 1024ULL * 1024ULL, true};
+
+    auto res = PlacementPolicyEngine::evaluate(
+        PlacementPolicyType::RESOURCE_AWARE, candidates, profiles, 36, 0, 16);
+    assert(res.success);
+    assert(res.total_offload_layers_requested == 0);
+    assert(res.total_capacity_available == 0);
+    for (const auto& plan : res.plans) {
+      assert(plan.capped_layer_capacity == 0);
+      assert(plan.predicted_layers.empty());
+    }
+    for (float split : res.tensor_split) {
+      assert(split == 0.0f);
+    }
+    std::cout << "[PASS] Scenario 6: Zero-layer CPU-only placement accepted" << std::endl;
+  }
 }
 
 int main() {

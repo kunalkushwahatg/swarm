@@ -179,6 +179,109 @@ export interface SSEDelta {
   id?: number;
 }
 
+export interface RpcTelemetryWorker {
+  id: string;
+  endpoint?: string;
+  is_loopback?: boolean;
+  assigned_layers?: number[];
+  wall_ms: number;
+  upload_ms: number;
+  remote_ms: number;
+  compute_ms: number;
+  download_ms: number;
+  network_rtt_ms: number;
+  bytes_sent: number;
+  bytes_received: number;
+  tensor_bytes_sent: number;
+  tensor_bytes_received: number;
+  tensor_count_sent: number;
+  tensor_count_received: number;
+  rpc_messages_sent: number;
+  rpc_messages_received: number;
+  probe_count?: number;
+  graph_count?: number;
+  worker_busy_count?: number;
+  compute_measured?: boolean;
+  partial?: boolean;
+}
+
+export interface RpcTelemetrySummary {
+  available: boolean;
+  partial?: boolean;
+  request_id?: number;
+  wall_ms: number;
+  upload_ms: number;
+  remote_ms: number;
+  compute_ms: number;
+  download_ms: number;
+  network_rtt_ms: number;
+  total_rpc_ms: number;
+  bytes_sent: number;
+  bytes_received: number;
+  tensor_bytes_sent: number;
+  tensor_bytes_received: number;
+  tensor_count_sent: number;
+  tensor_count_received: number;
+  rpc_messages_sent: number;
+  rpc_messages_received: number;
+  probe_count?: number;
+  graph_count?: number;
+  worker_busy_count?: number;
+  compute_measured?: boolean;
+  workers: RpcTelemetryWorker[];
+}
+
+export interface RpcTensorMeta {
+  name: string;
+  type: string;
+  shape: number[];
+}
+
+export type RpcOperationKind =
+  | "rpc"
+  | "tensor_send"
+  | "tensor_recv"
+  | "tensor_copy"
+  | "graph_compute"
+  | "worker_busy"
+  | "rtt_probe";
+
+export interface RpcTelemetryOperation {
+  worker_id: string;
+  op: string;
+  cmd: number;
+  kind: RpcOperationKind;
+  offset_ms: number;
+  duration_ms: number;
+  upload_ms: number;
+  remote_ms: number;
+  download_ms: number;
+  compute_ms: number;
+  has_compute: boolean;
+  request_bytes: number;
+  response_bytes: number;
+  tensor_bytes: number;
+  node_count: number;
+  graph_tensor_count: number;
+  note: string;
+  direction?: "send" | "receive" | "copy";
+  tensor?: RpcTensorMeta;
+}
+
+export interface RpcTelemetryDetail {
+  available: boolean;
+  request_id: number;
+  partial?: boolean;
+  summary?: Omit<RpcTelemetrySummary, "workers" | "available">;
+  workers: RpcTelemetryWorker[];
+  tensors: RpcTelemetryOperation[];
+  operations: RpcTelemetryOperation[];
+  worker_busy: RpcTelemetryOperation[];
+  started_at_ms?: number;
+  ended_at_ms?: number;
+  error?: string;
+}
+
 export interface SSETimings {
   choices: { delta: Record<string, never> }[];
   id: number;
@@ -188,6 +291,7 @@ export interface SSETimings {
     total_ms: number;
     tokens_generated: number;
     tokens_per_sec: number;
+    rpc_telemetry?: RpcTelemetrySummary;
   };
 }
 

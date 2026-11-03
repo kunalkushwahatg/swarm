@@ -1401,11 +1401,16 @@ fn main() {
         let job = Arc::new(JobObject::new().expect("Job creation failed"));
         let manager = Arc::new(ProcessManager::new(job));
         let orchestrator = Arc::new(Orchestrator::new(Arc::clone(&manager)));
-        let state = SupervisorState {
-            manager: Arc::clone(&manager),
-            orchestrator: Arc::clone(&orchestrator),
-            workspace_root: workspace_root.clone(),
-        };
+        let worker_manager = Arc::new(app_lib::supervisor::WorkerModeManager::new(
+            manager.clone(),
+            workspace_root.clone(),
+        ));
+        let state = SupervisorState::new(
+            Arc::clone(&manager),
+            Arc::clone(&orchestrator),
+            worker_manager,
+            workspace_root.clone(),
+        );
 
         // Start engine in safe simulated mode
         let start_res = start_engine_internal(&state, Some(StartEngineOptions {
@@ -1458,11 +1463,16 @@ fn main() {
         let job = Arc::new(JobObject::new().expect("Job creation failed"));
         let manager = Arc::new(ProcessManager::new(job));
         let orchestrator = Arc::new(Orchestrator::new(Arc::clone(&manager)));
-        let state = SupervisorState {
-            manager: Arc::clone(&manager),
-            orchestrator: Arc::clone(&orchestrator),
-            workspace_root: workspace_root.clone(),
-        };
+        let worker_manager = Arc::new(app_lib::supervisor::WorkerModeManager::new(
+            manager.clone(),
+            workspace_root.clone(),
+        ));
+        let state = SupervisorState::new(
+            Arc::clone(&manager),
+            Arc::clone(&orchestrator),
+            worker_manager,
+            workspace_root.clone(),
+        );
 
         // Test RPC timeout simulation
         let rpc_timeout_res = start_engine_internal(&state, Some(StartEngineOptions {
@@ -1513,11 +1523,16 @@ fn main() {
         let job = Arc::new(JobObject::new().expect("Job creation failed"));
         let manager = Arc::new(ProcessManager::new(job));
         let orchestrator = Arc::new(Orchestrator::new(manager.clone()));
-        let state = SupervisorState {
-            manager: manager.clone(),
-            orchestrator: orchestrator.clone(),
-            workspace_root: workspace_root.clone(),
-        };
+        let worker_manager = Arc::new(app_lib::supervisor::WorkerModeManager::new(
+            manager.clone(),
+            workspace_root.clone(),
+        ));
+        let state = SupervisorState::new(
+            manager.clone(),
+            orchestrator.clone(),
+            worker_manager,
+            workspace_root.clone(),
+        );
 
         // 1. Invoking real mode without operator authorization flag must be rejected
         let real_unauth_res = start_engine_internal(&state, Some(StartEngineOptions {
@@ -1576,11 +1591,16 @@ fn main() {
         let job = Arc::new(JobObject::new().expect("Job creation failed"));
         let manager = Arc::new(ProcessManager::new(job));
         let orchestrator = Arc::new(Orchestrator::new(manager.clone()));
-        let state = SupervisorState {
-            manager: manager.clone(),
-            orchestrator: orchestrator.clone(),
-            workspace_root: workspace_root.clone(),
-        };
+        let worker_manager = Arc::new(app_lib::supervisor::WorkerModeManager::new(
+            manager.clone(),
+            workspace_root.clone(),
+        ));
+        let state = SupervisorState::new(
+            manager.clone(),
+            orchestrator.clone(),
+            worker_manager,
+            workspace_root.clone(),
+        );
 
         // 1. Real standalone profile without allow_real_runtime must be blocked
         let real_unauth = start_engine_internal(&state, Some(StartEngineOptions {
@@ -1766,11 +1786,16 @@ fn main() {
         let job = Arc::new(JobObject::new().expect("Job creation failed"));
         let manager = Arc::new(ProcessManager::new(job));
         let orchestrator = Arc::new(Orchestrator::new(manager.clone()));
-        let state = SupervisorState {
-            manager: manager.clone(),
-            orchestrator: orchestrator.clone(),
-            workspace_root: workspace_root.clone(),
-        };
+        let worker_manager = Arc::new(app_lib::supervisor::WorkerModeManager::new(
+            manager.clone(),
+            workspace_root.clone(),
+        ));
+        let state = SupervisorState::new(
+            manager.clone(),
+            orchestrator.clone(),
+            worker_manager,
+            workspace_root.clone(),
+        );
 
         let unknown_profile_res = start_engine_internal(&state, Some(StartEngineOptions {
             mode: Some("simulated".to_string()),
@@ -2032,11 +2057,16 @@ fn main() {
         let job = Arc::new(JobObject::new().expect("Job creation failed"));
         let manager = Arc::new(ProcessManager::new(job));
         let orchestrator = Arc::new(Orchestrator::new(manager.clone()));
-        let state = SupervisorState {
-            manager: manager.clone(),
-            orchestrator: orchestrator.clone(),
-            workspace_root: workspace_root.clone(),
-        };
+        let worker_manager = Arc::new(app_lib::supervisor::WorkerModeManager::new(
+            manager.clone(),
+            workspace_root.clone(),
+        ));
+        let state = SupervisorState::new(
+            manager.clone(),
+            orchestrator.clone(),
+            worker_manager,
+            workspace_root.clone(),
+        );
 
         // 1. Query available profiles (mocked resources)
         let response = get_available_profiles_internal(&workspace_root, Some(1600), Some(3500));
@@ -2273,6 +2303,12 @@ fn main() {
             port: 50052,
             added_at_ms: 1700000000000,
             is_active: true,
+            transport: "tcp".to_string(),
+            endpoint_id: None,
+            direct_addr: None,
+            pairing_code: None,
+            relay_url: None,
+            tunnel_local_port: None,
         };
 
         // 1. Register worker
@@ -2380,9 +2416,10 @@ fn main() {
         let cuda_ranges = &preview.device_plans[0].planned_layer_ranges;
         let rpc_ranges = &preview.device_plans[1].planned_layer_ranges;
         let ranges_valid = !cuda_ranges.is_empty() && !rpc_ranges.is_empty()
-            && cuda_ranges[0].0 == 0
-            && (rpc_ranges[0].0 == cuda_ranges[0].1 + 1)
-            && (rpc_ranges[0].1 == TOTAL_MODEL_LAYERS - 1);
+            && (
+                (cuda_ranges[0].0 == 0 && rpc_ranges[0].0 == cuda_ranges[0].1 + 1 && rpc_ranges[0].1 == TOTAL_MODEL_LAYERS - 1)
+                || (rpc_ranges[0].0 == 0 && cuda_ranges[0].0 == rpc_ranges[0].1 + 1 && cuda_ranges[0].1 == TOTAL_MODEL_LAYERS - 1)
+            );
 
         let passed = cost_calibrated && valid_plan && safe_risk && cuda_usable && rpc_usable
             && all_layers_covered && policy_dynamic && ranges_valid;
@@ -2530,6 +2567,8 @@ fn main() {
                     enabled: true,
                     memory_budget_mb: 2000,
                     is_loopback: false,
+                    split_weight: None,
+                    locked_split: None,
                 },
                 DeviceAllocationSetting {
                     device_id: "192.168.1.99:50052".to_string(),
@@ -2538,6 +2577,8 @@ fn main() {
                     enabled: true,
                     memory_budget_mb: 1800,
                     is_loopback: false,
+                    split_weight: None,
+                    locked_split: None,
                 },
             ],
             updated_at_ms: 0,
@@ -2564,6 +2605,8 @@ fn main() {
                     enabled: true,
                     memory_budget_mb: 16000, // 16GB requested on 4GB hardware
                     is_loopback: false,
+                    split_weight: None,
+                    locked_split: None,
                 },
             ],
             updated_at_ms: 0,
@@ -2634,6 +2677,8 @@ fn main() {
                     enabled: true,
                     memory_budget_mb: 1200,
                     is_loopback: true,
+                    split_weight: None,
+                    locked_split: None,
                 },
             ],
             updated_at_ms: 1000,

@@ -1,0 +1,6 @@
+Formula,Input Values,Input Units,Calculated Result,Displayed Result,Rounding Rule,Value Type,Status
+"layers_to_assign = round(total_layers * weight_pct / 100)","total=18, weight_cuda=50%, weight_rpc=50%","layers, percent","CUDA: 9 layers, RPC: 9 layers","CUDA: 9 layers [0..8], RPC: 9 layers [9..17]","Integer layer rounding with remainder allocation","Calculated","PASS"
+"model_buffer_mb = sum(tensor_bytes) / 1048576","CUDA0: 637974610 bytes, RPC0: 408116265 bytes","bytes -> MiB","CUDA: 608.4 MiB, RPC: 389.2 MiB","CUDA0: 637.9 MB (608.4 MiB), RPC0: 408.1 MB (389.2 MiB)","Base-2 (1024^2) binary conversion","Measured","PASS"
+"tokens_per_sec = completion_tokens / (elapsed_ms / 1000)","tokens=32, elapsed=2850ms","tokens, ms","11.23 tokens/sec","11.2 tokens/s","1 decimal place","Measured","PASS"
+"reserved_headroom_ram = total_ram - requested_ram_ceiling","total=8032MB, headroom_min=1024MB","MiB","7008 MB usable host RAM headroom","1024 MB reserved headroom configured","Integer MiB","Configured","PASS"
+"vram_headroom = gtx1050_vram - cuda_model_buf - cuda_compute_buf","vram=4095MB, model=608MB, compute=301MB","MiB","3186 MB free VRAM","3526 MB available VRAM reported by driver","Exact byte reading via DXGI/Cuda","Measured","PASS"

@@ -10,6 +10,7 @@
 #include <thread>
 #include <chrono>
 #include <fstream>
+#include <cstdlib>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -182,6 +183,24 @@ static bool is_process_tcp_connected_to_endpoint(const std::string& host, uint16
     }
     return false;
 }
+#else
+static bool is_process_tcp_connected_to_endpoint(const std::string& host, uint16_t port) {
+    (void)host;
+    // On POSIX / Android, inspect /proc/net/tcp for an ESTABLISHED (01) connection on this port
+    std::ifstream tcp_file("/proc/net/tcp");
+    if (!tcp_file.is_open()) {
+        return false;
+    }
+    char hex_port[16];
+    std::snprintf(hex_port, sizeof(hex_port), ":%04X", port);
+    std::string line;
+    while (std::getline(tcp_file, line)) {
+        if (line.find(hex_port) != std::string::npos && line.find(" 01 ") != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
 #endif
 
 // Helper function to check if a worker is reachable via TCP
@@ -316,6 +335,7 @@ WorkerManager::~WorkerManager() {
 }
 
 bool WorkerManager::add_worker(const WorkerInfo& worker) {
+    std::lock_guard<std::mutex> lock(mutex_);
     // Check for duplicate ID
     for (const auto& w : workers_) {
         if (w.id == worker.id) {
@@ -340,6 +360,7 @@ bool WorkerManager::add_worker(const WorkerInfo& worker) {
 }
 
 bool WorkerManager::start_local_workers() {
+    std::lock_guard<std::mutex> lock(mutex_);
     bool success = true;
 
     for (auto& worker : workers_) {
@@ -364,13 +385,17 @@ bool WorkerManager::start_local_workers() {
             cmd << "\"ggml-rpc-server.exe\" --host " << worker.host
                 << " --port " << worker.port;
 
-            // Add cache directory if specified (we'd need to add this to WorkerInfo)
-            // For now, we'll use a default cache directory based on worker ID
-            std::string cache_dir = "./worker_cache_" + worker.id;
-            // Create directory if it doesn't exist
-            std::string mkdir_cmd = "if not exist " + cache_dir + " mkdir " + cache_dir;
-            system(mkdir_cmd.c_str());
-            cmd << " --cache-dir " << cache_dir;
+            // ggml-rpc-server only supports -c/--cache as a flag. The cache
+            // directory is read from LLAMA_CACHE or the platform default.
+            std::string cache_dir = worker.cache_dir.empty()
+                ? "./worker_cache_" + worker.id
+                : worker.cache_dir;
+#ifdef _WIN32
+            SetEnvironmentVariableA("LLAMA_CACHE", cache_dir.c_str());
+#else
+            setenv("LLAMA_CACHE", cache_dir.c_str(), 1);
+#endif
+            cmd << " --cache";
 
             std::cout << "Starting worker '" << worker.id << "': " << cmd.str() << std::endl;
 
@@ -397,6 +422,7 @@ bool WorkerManager::start_local_workers() {
                 )) {
                 // Store the process handle so we can wait on it later
                 worker_processes_.push_back(pi.hProcess);
+                worker.pid = pi.dwProcessId;
                 // Close the thread handle as we don't need it
                 CloseHandle(pi.hThread);
 
@@ -431,6 +457,7 @@ bool WorkerManager::start_local_workers() {
 }
 
 void WorkerManager::stop_local_workers() {
+    std::lock_guard<std::mutex> lock(mutex_);
     // Signal all worker processes to stop and wait for them
 #ifdef _WIN32
     for (size_t i = 0; i < worker_processes_.size(); ++i) {
@@ -469,23 +496,41 @@ bool WorkerManager::is_worker_connected_or_reachable(const WorkerInfo& worker, i
     return is_worker_reachable(worker.host, worker.port, timeout_ms);
 }
 
-void WorkerManager::check_worker_health(WorkerInfo& worker) {
-    // If the worker is currently participating in active inference, do not probe
-    // or disrupt the synchronous RPC connection.
+namespace {
+
+struct WorkerHealthObservation {
+    bool connected = false;
+    bool reachable = false;
+    bool process_checked = false;
+    bool process_running = false;
+};
+
+void apply_health_observation(WorkerInfo& worker, const WorkerHealthObservation& observation) {
+    // If the worker is currently participating in active inference, do not
+    // disrupt the synchronous RPC connection.
     if (worker.is_inference_active || worker.state == WorkerState::BUSY) {
+        return;
+    }
+
+    worker.last_health_check = std::chrono::system_clock::now();
+
+    if (worker.type == WorkerType::LOCAL_CUDA) {
+        // Local CUDA devices run in-process and have no network endpoint to probe.
+        if (worker.state == WorkerState::STOPPED ||
+            worker.state == WorkerState::STARTING ||
+            worker.state == WorkerState::UNAVAILABLE ||
+            worker.state == WorkerState::FAILED) {
+            worker.state = WorkerState::READY;
+            worker.last_error.clear();
+        }
         return;
     }
 
     if (worker.type != WorkerType::LOCAL_RPC) {
         // For non-local workers (REMOTE_RPC):
-        // 1. Check if our coordinator process already has an established TCP connection
-        //    to this worker endpoint (e.g. via GGML RPC backend).
-        bool has_active_connection = false;
-#ifdef _WIN32
-        has_active_connection = is_process_tcp_connected_to_endpoint(worker.host, worker.port);
-#endif
-
-        if (has_active_connection) {
+        // 1. Check if our coordinator process already has an established TCP
+        //    connection to this worker endpoint (e.g. via GGML RPC backend).
+        if (observation.connected) {
             worker.has_active_backend_connection = true;
             if (worker.state == WorkerState::STOPPED ||
                 worker.state == WorkerState::STARTING ||
@@ -497,20 +542,48 @@ void WorkerManager::check_worker_health(WorkerInfo& worker) {
             return;
         }
 
-        // 2. If the worker previously had an active backend connection with assigned model layers,
-        //    but the connection is no longer in ESTABLISHED state, detect connection loss.
+        // 2. If the worker previously had an active backend connection with
+        //    assigned model layers, but that connection is gone and the endpoint
+        //    is no longer reachable, report loss.
         if (worker.has_active_backend_connection &&
-            (!worker.assigned_layers.empty() || (worker.model_buffer_bytes.has_value() && worker.model_buffer_bytes.value() > 0))) {
-            if (worker.state == WorkerState::READY || worker.state == WorkerState::BUSY) {
-                worker.state = WorkerState::UNAVAILABLE;
-                worker.last_error = "RPC backend connection to " + worker.host + ":" + std::to_string(worker.port) + " was lost";
-                std::cerr << "Worker '" << worker.id << "' is now unavailable: " << worker.last_error << std::endl;
+            (!worker.assigned_layers.empty() ||
+             (worker.model_buffer_bytes.has_value() && worker.model_buffer_bytes.value() > 0))) {
+            if (!observation.reachable) {
+                if (worker.state == WorkerState::READY || worker.state == WorkerState::BUSY) {
+                    worker.state = WorkerState::UNAVAILABLE;
+                    worker.last_error = "RPC backend connection to " + worker.host + ":" +
+                                        std::to_string(worker.port) + " was lost";
+                    std::cerr << "Worker '" << worker.id << "' is now unavailable: "
+                              << worker.last_error << std::endl;
+                }
+                return;
+            }
+        }
+
+        // 3a. A worker that owned model layers over a GGML RPC session whose
+        //     socket has since died must never be promoted back to READY just
+        //     because its port answers a fresh TCP handshake. The old backend
+        //     session is gone for good: ggml-rpc aborts the whole coordinator
+        //     process the moment a graph is dispatched into it ("A registered
+        //     backend disconnected or failed during tensor execution"). Only a
+        //     model reload can re-register the backend, so keep reporting the
+        //     worker as unavailable until the operator restarts the engine.
+        if (worker.has_active_backend_connection &&
+            (!worker.assigned_layers.empty() || !worker.assigned_layer_ranges.empty())) {
+            const bool was_unavailable = worker.state == WorkerState::UNAVAILABLE;
+            worker.state = WorkerState::UNAVAILABLE;
+            worker.last_error = "RPC backend session to " + worker.host + ":" +
+                                std::to_string(worker.port) +
+                                " was lost; restart the engine to re-register it";
+            if (!was_unavailable) {
+                std::cerr << "Worker '" << worker.id << "' requires an engine restart: "
+                          << worker.last_error << std::endl;
             }
             return;
         }
 
-        // 3. Otherwise (pre-connection, idle before model load, or attempting recovery):
-        if (is_worker_reachable(worker.host, worker.port, 2000)) {
+        // 3b. Otherwise (pre-connection, idle before model load, or recovery):
+        if (observation.reachable) {
             if (worker.state == WorkerState::STOPPED ||
                 worker.state == WorkerState::STARTING ||
                 worker.state == WorkerState::UNAVAILABLE) {
@@ -518,43 +591,32 @@ void WorkerManager::check_worker_health(WorkerInfo& worker) {
                 worker.last_error.clear();
                 std::cout << "Worker '" << worker.id << "' is now ready" << std::endl;
             }
-        } else {
-            if (worker.state == WorkerState::STARTING ||
-                worker.state == WorkerState::READY) {
-                worker.state = WorkerState::UNAVAILABLE;
-                worker.last_error = "Worker is not reachable at " + worker.host + ":" + std::to_string(worker.port);
-                std::cerr << "Worker '" << worker.id << "' is now unavailable: " << worker.last_error << std::endl;
-            }
+        } else if (worker.state == WorkerState::STARTING ||
+                   worker.state == WorkerState::READY) {
+            worker.state = WorkerState::UNAVAILABLE;
+            worker.last_error = "Worker is not reachable at " + worker.host + ":" +
+                                std::to_string(worker.port);
+            std::cerr << "Worker '" << worker.id << "' is now unavailable: "
+                      << worker.last_error << std::endl;
         }
         return;
     }
 
-    // For LOCAL_RPC workers that we manage
+    // For LOCAL_RPC workers that we manage.
     if (worker.state == WorkerState::STOPPED) {
         return;
     }
 
     if (worker.state == WorkerState::STARTING) {
-        bool process_running = false;
-#ifdef _WIN32
-        for (auto handle : worker_processes_) {
-            if (handle != NULL) {
-                DWORD exit_code;
-                if (GetExitCodeProcess(handle, &exit_code) && exit_code == STILL_ACTIVE) {
-                    process_running = true;
-                    break;
-                }
-            }
-        }
-#endif
-        if (!process_running) {
+        if (!observation.process_checked || !observation.process_running) {
             worker.state = WorkerState::FAILED;
             worker.last_error = "Process terminated unexpectedly";
-            std::cerr << "Worker '" << worker.id << "' failed to start: " << worker.last_error << std::endl;
+            std::cerr << "Worker '" << worker.id << "' failed to start: "
+                      << worker.last_error << std::endl;
             return;
         }
 
-        if (is_worker_reachable(worker.host, worker.port, 2000)) {
+        if (observation.reachable) {
             worker.state = WorkerState::READY;
             worker.last_error.clear();
             std::cout << "Worker '" << worker.id << "' is now ready" << std::endl;
@@ -563,28 +625,14 @@ void WorkerManager::check_worker_health(WorkerInfo& worker) {
     }
 
     if (worker.state == WorkerState::READY) {
-        bool alive = false;
-#ifdef _WIN32
-        alive = is_process_tcp_connected_to_endpoint(worker.host, worker.port) ||
-                is_worker_reachable(worker.host, worker.port, 2000);
-#else
-        alive = is_worker_reachable(worker.host, worker.port, 2000);
-#endif
-        if (!alive) {
+        if (!observation.connected && !observation.reachable) {
             worker.state = WorkerState::UNAVAILABLE;
             worker.last_error = "Worker became unreachable";
-            std::cerr << "Worker '" << worker.id << "' is now unavailable: " << worker.last_error << std::endl;
+            std::cerr << "Worker '" << worker.id << "' is now unavailable: "
+                      << worker.last_error << std::endl;
         }
-    }
-    else if (worker.state == WorkerState::FAILED || worker.state == WorkerState::UNAVAILABLE) {
-        bool recovered = false;
-#ifdef _WIN32
-        recovered = is_process_tcp_connected_to_endpoint(worker.host, worker.port) ||
-                    is_worker_reachable(worker.host, worker.port, 2000);
-#else
-        recovered = is_worker_reachable(worker.host, worker.port, 2000);
-#endif
-        if (recovered) {
+    } else if (worker.state == WorkerState::FAILED || worker.state == WorkerState::UNAVAILABLE) {
+        if (observation.connected || observation.reachable) {
             worker.state = WorkerState::READY;
             worker.last_error.clear();
             std::cout << "Worker '" << worker.id << "' has recovered and is now ready" << std::endl;
@@ -592,29 +640,170 @@ void WorkerManager::check_worker_health(WorkerInfo& worker) {
     }
 }
 
+} // namespace
+
+bool WorkerManager::is_managed_process_running_locked(const WorkerInfo& worker) const {
+#ifdef _WIN32
+    if (worker.pid.has_value()) {
+        for (auto handle : worker_processes_) {
+            if (handle != NULL && GetProcessId(handle) == *worker.pid) {
+                DWORD exit_code = 0;
+                return GetExitCodeProcess(handle, &exit_code) && exit_code == STILL_ACTIVE;
+            }
+        }
+        return false;
+    }
+    // Legacy path: no PID recorded for this worker.
+    for (auto handle : worker_processes_) {
+        if (handle != NULL) {
+            DWORD exit_code = 0;
+            if (GetExitCodeProcess(handle, &exit_code) && exit_code == STILL_ACTIVE) {
+                return true;
+            }
+        }
+    }
+#else
+    (void)worker;
+#endif
+    return false;
+}
+
+void WorkerManager::check_worker_health(WorkerInfo& worker) {
+    if (worker.is_inference_active || worker.state == WorkerState::BUSY) {
+        return;
+    }
+
+    WorkerHealthObservation observation;
+
+    if (worker.type == WorkerType::LOCAL_RPC && worker.state == WorkerState::STARTING) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        observation.process_checked = true;
+        observation.process_running = is_managed_process_running_locked(worker);
+    }
+
+    if (worker.type != WorkerType::LOCAL_CUDA &&
+        !(observation.process_checked && !observation.process_running)) {
+        observation.connected = is_process_tcp_connected_to_endpoint(worker.host, worker.port);
+#ifndef _WIN32
+        // On Android / POSIX, /proc/net/tcp is restricted by SELinux.
+        // If a backend connection is established and healthy, do not open
+        // a competing TCP connection that disrupts the single-threaded RPC server.
+        if (!observation.connected && worker.has_active_backend_connection && worker.state == WorkerState::READY) {
+            observation.connected = true;
+        }
+#endif
+        observation.reachable = observation.connected ||
+                                is_worker_reachable(worker.host, worker.port, 2000);
+    }
+
+    apply_health_observation(worker, observation);
+}
+
+void WorkerManager::check_worker_health(const std::string& id) {
+    WorkerInfo snapshot;
+    WorkerHealthObservation observation;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = std::find_if(workers_.begin(), workers_.end(),
+                               [&](const WorkerInfo& worker) { return worker.id == id; });
+        if (it == workers_.end()) {
+            return;
+        }
+        snapshot = *it;
+        if (snapshot.is_inference_active || snapshot.state == WorkerState::BUSY) {
+            return;
+        }
+        if (snapshot.type == WorkerType::LOCAL_RPC && snapshot.state == WorkerState::STARTING) {
+            observation.process_checked = true;
+            observation.process_running = is_managed_process_running_locked(snapshot);
+        }
+    }
+
+    // Network probes deliberately run without the registry lock. They can take
+    // up to the socket timeout and must not block HTTP status or inference.
+    if (snapshot.type != WorkerType::LOCAL_CUDA &&
+        !(observation.process_checked && !observation.process_running)) {
+        observation.connected = is_process_tcp_connected_to_endpoint(snapshot.host, snapshot.port);
+#ifndef _WIN32
+        // On Android / POSIX, /proc/net/tcp is restricted by SELinux.
+        // If a backend connection is established and healthy, do not open
+        // a competing TCP connection that disrupts the single-threaded RPC server.
+        if (!observation.connected && snapshot.has_active_backend_connection && snapshot.state == WorkerState::READY) {
+            observation.connected = true;
+        }
+#endif
+        observation.reachable = observation.connected ||
+                                is_worker_reachable(snapshot.host, snapshot.port, 2000);
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = std::find_if(workers_.begin(), workers_.end(),
+                           [&](const WorkerInfo& worker) { return worker.id == id; });
+    if (it == workers_.end() || it->is_inference_active || it->state == WorkerState::BUSY) {
+        return;
+    }
+    apply_health_observation(*it, observation);
+}
+
 std::vector<ggml_backend_dev_t> WorkerManager::get_rpc_devices() {
+    std::lock_guard<std::mutex> lock(mutex_);
     return rpc_devices_;
 }
 
 void WorkerManager::add_rpc_device(ggml_backend_dev_t device) {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (device && std::find(rpc_devices_.begin(), rpc_devices_.end(), device) == rpc_devices_.end()) {
         rpc_devices_.push_back(device);
     }
 }
 
-std::optional<std::reference_wrapper<WorkerInfo>> WorkerManager::get_worker(const std::string& id) {
-    for (auto& worker : workers_) {
+std::optional<WorkerInfo> WorkerManager::get_worker(const std::string& id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& worker : workers_) {
         if (worker.id == id) {
-            return std::ref(worker);
+            return worker;
         }
     }
     return std::nullopt;
 }
 
-std::vector<WorkerInfo>& WorkerManager::get_workers() {
+std::vector<WorkerInfo> WorkerManager::get_workers() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return workers_;
 }
 
-const std::vector<WorkerInfo>& WorkerManager::get_workers() const {
-    return workers_;
+std::vector<std::string> WorkerManager::begin_inference() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::string> active_ids;
+    for (auto& worker : workers_) {
+        const bool participates = !worker.assigned_layers.empty() ||
+                                  (worker.model_buffer_bytes.has_value() &&
+                                   worker.model_buffer_bytes.value() > 0);
+        if (!participates) {
+            continue;
+        }
+        worker.is_inference_active = true;
+        if (worker.state == WorkerState::READY) {
+            worker.state = WorkerState::BUSY;
+        }
+        worker.inference_count++;
+        active_ids.push_back(worker.id);
+    }
+    return active_ids;
+}
+
+void WorkerManager::end_inference(const std::vector<std::string>& ids) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto& worker : workers_) {
+        for (const auto& id : ids) {
+            if (worker.id == id) {
+                worker.is_inference_active = false;
+                if (worker.state == WorkerState::BUSY) {
+                    worker.state = WorkerState::READY;
+                }
+                break;
+            }
+        }
+    }
 }

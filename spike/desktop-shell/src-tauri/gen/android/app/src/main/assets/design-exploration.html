@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swarm — Visual Design Directions Exploration</title>
+  <style>
+    :root {
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background: #ECEEE9;
+      color: #222;
+      padding: 24px 16px;
+      line-height: 1.4;
+    }
+    header.meta-banner {
+      max-width: 1600px;
+      margin: 0 auto 24px auto;
+      padding: 20px 24px;
+      background: #FFFFFF;
+      border: 1px solid #D9DED5;
+      border-radius: 8px;
+    }
+    .meta-banner h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1A211E;
+      margin-bottom: 6px;
+    }
+    .meta-banner p {
+      font-size: 13px;
+      color: #5A6560;
+    }
+    .demo-notice {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 3px 8px;
+      background: #FFF4D9;
+      color: #7A5300;
+      border: 1px solid #F0DA9E;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .directions-grid {
+      max-width: 1600px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 20px;
+    }
+    .direction-card {
+      background: #FFF;
+      border: 1px solid #D5DBD2;
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    }
+    .direction-header {
+      padding: 16px;
+      border-bottom: 1px solid #E0E5DD;
+      background: #FAFBFA;
+    }
+    .direction-header h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #18201C;
+    }
+    .direction-header .tagline {
+      font-size: 12px;
+      color: #606C66;
+      margin-top: 2px;
+    }
+    .direction-preview {
+      padding: 16px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* ════════════════════════════════════════════
+       DIRECTION A: WARM ENGINEERING WORKBENCH
+       ════════════════════════════════════════════ */
+    .preview-a {
+      background: #F7F7F3;
+      color: #252B28;
+      border-radius: 6px;
+      padding: 14px;
+      border: 1px solid #E2E6E0;
+    }
+    .preview-a .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #E2E6E0;
+    }
+    .preview-a .brand {
+      font-weight: 700;
+      font-size: 13px;
+      color: #1E2421;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .preview-a .brand-dot {
+      width: 7px;
+      height: 7px;
+      background: #356B55;
+      border-radius: 50%;
+    }
+    .preview-a .nav-pills {
+      display: flex;
+      gap: 4px;
+      margin: 10px 0;
+    }
+    .preview-a .nav-pill {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 9px;
+      border-radius: 5px;
+      background: transparent;
+      color: #55615B;
+      border: none;
+    }
+    .preview-a .nav-pill.active {
+      background: #E8ECE6;
+      color: #1A211E;
+    }
+    .preview-a .chat-bubble-assistant {
+      background: #FFFFFF;
+      border: 1px solid #E2E6E0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 12px;
+      color: #252B28;
+      line-height: 1.45;
+    }
+    .preview-a .chat-bubble-user {
+      background: #356B55;
+      color: #FFFFFF;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      align-self: flex-end;
+      max-width: 85%;
+      margin-left: auto;
+    }
+    .preview-a .composer {
+      display: flex;
+      gap: 6px;
+      background: #FFFFFF;
+      border: 1px solid #D5DBD2;
+      border-radius: 6px;
+      padding: 6px 10px;
+      margin-top: 8px;
+    }
+    .preview-a .composer input {
+      border: none;
+      outline: none;
+      font-size: 12px;
+      flex: 1;
+      color: #252B28;
+      background: transparent;
+    }
+    .preview-a .worker-box {
+      background: #FFFFFF;
+      border: 1px solid #E2E6E0;
+      border-radius: 6px;
+      padding: 10px;
+      margin-top: 8px;
+    }
+    .preview-a .badge-ok {
+      background: #EAF3EC;
+      color: #2C684B;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .preview-a .layer-bar {
+      height: 6px;
+      background: #E8ECE6;
+      border-radius: 3px;
+      display: flex;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .preview-a .layer-seg-cuda { background: #356B55; width: 12%; }
+    .preview-a .layer-seg-rpc { background: #608876; width: 88%; }
+
+    /* ════════════════════════════════════════════
+       DIRECTION B: PRECISION PRODUCTIVITY
+       ════════════════════════════════════════════ */
+    .preview-b {
+      background: #F8F9FA;
+      color: #111827;
+      border-radius: 4px;
+      padding: 14px;
+      border: 1px solid #E5E7EB;
+    }
+    .preview-b .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #E5E7EB;
+    }
+    .preview-b .brand {
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #0F172A;
+    }
+    .preview-b .nav-tabs {
+      display: flex;
+      border-bottom: 1px solid #E5E7EB;
+      margin: 8px 0;
+    }
+    .preview-b .nav-tab {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 5px 10px;
+      border-bottom: 2px solid transparent;
+      color: #64748B;
+    }
+    .preview-b .nav-tab.active {
+      color: #0F172A;
+      border-bottom-color: #0F172A;
+      font-weight: 600;
+    }
+    .preview-b .chat-bubble-assistant {
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 3px;
+      padding: 9px 11px;
+      font-size: 12px;
+      border-left: 3px solid #0F172A;
+    }
+    .preview-b .chat-bubble-user {
+      background: #F1F5F9;
+      color: #0F172A;
+      border: 1px solid #CBD5E1;
+      border-radius: 3px;
+      padding: 7px 11px;
+      font-size: 12px;
+      align-self: flex-end;
+      margin-left: auto;
+    }
+    .preview-b .composer {
+      display: flex;
+      gap: 6px;
+      background: #FFFFFF;
+      border: 1px solid #CBD5E1;
+      border-radius: 3px;
+      padding: 6px 8px;
+      margin-top: 8px;
+    }
+    .preview-b .composer input {
+      border: none;
+      outline: none;
+      font-size: 12px;
+      flex: 1;
+      color: #0F172A;
+    }
+    .preview-b .worker-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 3px;
+      margin-top: 6px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+    }
+
+    /* ════════════════════════════════════════════
+       DIRECTION C: DISTRIBUTED SYSTEMS INSTRUMENT
+       ════════════════════════════════════════════ */
+    .preview-c {
+      background: #F1F4F8;
+      color: #1E293B;
+      border-radius: 6px;
+      padding: 14px;
+      border: 1px solid #CBD5E1;
+    }
+    .preview-c .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #CBD5E1;
+    }
+    .preview-c .brand {
+      font-weight: 700;
+      font-size: 13px;
+      color: #1E3A8A;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .preview-c .topology-diagram {
+      background: #FFFFFF;
+      border: 1px solid #CBD5E1;
+      border-radius: 5px;
+      padding: 10px;
+      margin: 8px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      font-size: 11px;
+      font-family: var(--font-mono);
+    }
+    .preview-c .topo-node {
+      padding: 4px 8px;
+      border: 1px solid #94A3B8;
+      border-radius: 4px;
+      background: #F8FAFC;
+      text-align: center;
+    }
+    .preview-c .topo-arrow {
+      color: #2563EB;
+      font-weight: bold;
+    }
+    .preview-c .chat-bubble-assistant {
+      background: #FFFFFF;
+      border: 1px solid #CBD5E1;
+      border-radius: 5px;
+      padding: 9px 12px;
+      font-size: 12px;
+    }
+    .preview-c .chat-bubble-user {
+      background: #1E3A8A;
+      color: #FFFFFF;
+      border-radius: 5px;
+      padding: 7px 11px;
+      font-size: 12px;
+      margin-left: auto;
+    }
+    .preview-c .composer {
+      display: flex;
+      gap: 6px;
+      background: #FFFFFF;
+      border: 1px solid #94A3B8;
+      border-radius: 5px;
+      padding: 6px 10px;
+      margin-top: 8px;
+    }
+    .preview-c .composer input {
+      border: none;
+      outline: none;
+      font-size: 12px;
+      flex: 1;
+    }
+
+    /* ════════════════════════════════════════════
+       DIRECTION D: CONTEMPORARY EDITORIAL MINIMALISM
+       ════════════════════════════════════════════ */
+    .preview-d {
+      background: #FAF9F5;
+      color: #1A1A1A;
+      border-radius: 2px;
+      padding: 16px;
+      border: 1px solid #E7E5E0;
+    }
+    .preview-d .topbar {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #1A1A1A;
+    }
+    .preview-d .brand {
+      font-family: "Georgia", serif;
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: -0.02em;
+    }
+    .preview-d .chat-bubble-assistant {
+      background: transparent;
+      border-bottom: 1px solid #E7E5E0;
+      padding: 10px 0;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .preview-d .chat-bubble-user {
+      font-style: italic;
+      color: #555;
+      padding: 6px 0;
+      font-size: 12px;
+      text-align: right;
+    }
+    .preview-d .composer {
+      border-bottom: 1px solid #1A1A1A;
+      padding: 8px 0;
+      margin-top: 12px;
+      display: flex;
+    }
+    .preview-d .composer input {
+      border: none;
+      outline: none;
+      background: transparent;
+      font-size: 13px;
+      flex: 1;
+    }
+    .preview-d .worker-section {
+      margin-top: 12px;
+      border-top: 1px solid #E7E5E0;
+      padding-top: 8px;
+      font-size: 11px;
+    }
+
+    /* Comparison Table */
+    .comparison-section {
+      max-width: 1600px;
+      margin: 24px auto 0 auto;
+      background: #FFF;
+      border: 1px solid #D9DED5;
+      border-radius: 8px;
+      padding: 20px 24px;
+    }
+    .comparison-section h2 {
+      font-size: 17px;
+      color: #1A211E;
+      margin-bottom: 12px;
+    }
+    table.comp-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    table.comp-table th, table.comp-table td {
+      border: 1px solid #E2E6E0;
+      padding: 10px 12px;
+      text-align: left;
+    }
+    table.comp-table th {
+      background: #FAFBFA;
+      font-weight: 600;
+      color: #333;
+    }
+    .badge-winner {
+      background: #E8F5E9;
+      color: #2E7D32;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="meta-banner">
+    <h1>Swarm — Milestone 13 Visual Design Directions Exploration</h1>
+    <p>Side-by-side comparative evaluation of four distinct visual and architectural directions for the Swarm distributed inference workbench.</p>
+    <div class="demo-notice">Demonstration &amp; Evaluation Preview &bull; Not for live inference traffic</div>
+  </header>
+
+  <div class="directions-grid">
+
+    <!-- DIRECTION A -->
+    <div class="direction-card">
+      <div class="direction-header">
+        <h2>Direction A &mdash; Warm Engineering Workbench <span class="badge-winner">Recommended Choice</span></h2>
+        <div class="tagline">Warm neutral canvas (#F7F7F3), white surfaces, forest-green / muted-teal accent (#356B55), calm precision.</div>
+      </div>
+      <div class="direction-preview preview-a">
+        <div class="topbar">
+          <div class="brand">
+            <div class="brand-dot"></div>
+            SWARM
+          </div>
+          <span style="font-size: 10px; font-family: var(--font-mono); color: #55615B;">Qwen 2.5 3B &bull; 1/1 RPC Ready</span>
+        </div>
+
+        <div class="nav-pills">
+          <button class="nav-pill active">Chat</button>
+          <button class="nav-pill">Activity</button>
+          <button class="nav-pill">Workers</button>
+          <button class="nav-pill">Nodes</button>
+          <button class="nav-pill">Settings</button>
+        </div>
+
+        <div class="chat-bubble-user">
+          Calculate layer allocation across CUDA and remote worker.
+        </div>
+
+        <div class="chat-bubble-assistant">
+          Layer distribution confirmed: <strong>3 layers</strong> placed on local CUDA0 (4.0GB VRAM), and <strong>33 layers</strong> offloaded to RPC worker at <code>127.0.0.1:50052</code>.
+          <div class="layer-bar" title="3/36 CUDA, 33/36 RPC">
+            <div class="layer-seg-cuda"></div>
+            <div class="layer-seg-rpc"></div>
+          </div>
+          <div style="font-size: 10px; color: #66716B; margin-top: 4px; font-family: var(--font-mono);">
+            Eval: 18.2 ms &bull; Gen: 42.1 t/s &bull; Pipeline: Healthy
+          </div>
+        </div>
+
+        <div class="composer">
+          <input type="text" placeholder="Send prompt to distributed swarm..." value="What is the active context size?" readonly>
+          <button style="background: #356B55; color: #FFF; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px;">Send</button>
+        </div>
+
+        <div class="worker-box">
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+            <span><strong>rpc-endpoint-0</strong> (127.0.0.1:50052)</span>
+            <span class="badge-ok">READY</span>
+          </div>
+          <div style="font-size: 10px; color: #66716B; margin-top: 4px;">Host: Desktop-01 &bull; Layers: 3&ndash;35 &bull; 0.8ms RTT</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DIRECTION B -->
+    <div class="direction-card">
+      <div class="direction-header">
+        <h2>Direction B &mdash; Precision Productivity</h2>
+        <div class="tagline">Crisp monochrome (#F8F9FA / #0F172A), hairline borders, dense monospace data, IDE simplicity.</div>
+      </div>
+      <div class="direction-preview preview-b">
+        <div class="topbar">
+          <div class="brand">SWARM // PROD</div>
+          <span style="font-size: 10px; font-family: var(--font-mono); color: #64748B;">STATE: INFERENCE_READY</span>
+        </div>
+
+        <div class="nav-tabs">
+          <div class="nav-tab active">CHAT</div>
+          <div class="nav-tab">METRICS</div>
+          <div class="nav-tab">WORKERS</div>
+          <div class="nav-tab">NODES</div>
+        </div>
+
+        <div class="chat-bubble-user">
+          Verify memory buffer bounds
+        </div>
+
+        <div class="chat-bubble-assistant">
+          <div style="font-family: var(--font-mono); font-size: 11px; margin-bottom: 4px; color: #475569;">[COORDINATOR_RESPONSE]</div>
+          Host RAM: 16.0 GB &bull; Model Buffer: 1.84 GB &bull; KV Cache: 256 MB. Zero memory leaks detected.
+        </div>
+
+        <div class="composer">
+          <input type="text" placeholder="Type prompt [Ctrl+Enter to run]..." readonly>
+          <span style="font-size: 10px; font-family: var(--font-mono); color: #64748B; align-self: center;">0/4096</span>
+        </div>
+
+        <div class="worker-row">
+          <span>ENDPOINT: 127.0.0.1:50052</span>
+          <span style="color: #059669; font-weight: 700;">[200 OK]</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- DIRECTION C -->
+    <div class="direction-card">
+      <div class="direction-header">
+        <h2>Direction C &mdash; Distributed Systems Instrument</h2>
+        <div class="tagline">Technical instrument theme (#F1F4F8 / #1E3A8A), topology graphs, multi-tier layer diagnostics.</div>
+      </div>
+      <div class="direction-preview preview-c">
+        <div class="topbar">
+          <div class="brand">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+            SWARM CLUSTER
+          </div>
+          <span style="font-size: 10px; font-family: var(--font-mono); background: #DBEAFE; color: #1E40AF; padding: 2px 6px; border-radius: 3px;">TOPOLOGY 1+1</span>
+        </div>
+
+        <div class="topology-diagram">
+          <div class="topo-node">GATEWAY<br><span style="font-size: 9px; color: #64748B;">:8080</span></div>
+          <div class="topo-arrow">&rarr;</div>
+          <div class="topo-node">CUDA0<br><span style="font-size: 9px; color: #64748B;">L0-L2</span></div>
+          <div class="topo-arrow">&rarr;</div>
+          <div class="topo-node">RPC0<br><span style="font-size: 9px; color: #64748B;">L3-L35</span></div>
+        </div>
+
+        <div class="chat-bubble-user">
+          Execute prompt with temperature 0.7
+        </div>
+
+        <div class="chat-bubble-assistant">
+          Processed across 36 total GGML tensor layers. Output streaming stable at 38 tok/s.
+        </div>
+
+        <div class="composer">
+          <input type="text" placeholder="Query distributed cluster..." readonly>
+          <button style="background: #1E3A8A; color: #FFF; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px;">Run</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DIRECTION D -->
+    <div class="direction-card">
+      <div class="direction-header">
+        <h2>Direction D &mdash; Contemporary Editorial Minimalism</h2>
+        <div class="tagline">Warm ivory canvas (#FAF9F5), serif branding, stark line delimiters, literary whitespace.</div>
+      </div>
+      <div class="direction-preview preview-d">
+        <div class="topbar">
+          <div class="brand">Swarm Intelligence</div>
+          <span style="font-size: 11px; font-style: italic; color: #666;">Inference Online</span>
+        </div>
+
+        <div class="chat-bubble-user">
+          &ldquo;Explain distributed KV caching in two sentences.&rdquo;
+        </div>
+
+        <div class="chat-bubble-assistant">
+          Distributed KV caching divides attention history across networked compute backends to avoid redundant tensor re-evaluations. By co-locating layer buffers with worker memory, token latency remains predictable across nodes.
+        </div>
+
+        <div class="composer">
+          <input type="text" placeholder="Inquire..." readonly>
+          <span style="font-size: 11px; color: #888;">&crarr;</span>
+        </div>
+
+        <div class="worker-section">
+          <strong>Node Alpha</strong> &mdash; 127.0.0.1:50052 &bull; Active &bull; 33 assigned layers
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- EVALUATION MATRIX -->
+  <section class="comparison-section">
+    <h2>Direction Evaluation &amp; Architectural Selection Matrix</h2>
+    <table class="comp-table">
+      <thead>
+        <tr>
+          <th>Evaluation Criteria</th>
+          <th>Direction A: Warm Workbench</th>
+          <th>Direction B: Precision Prod</th>
+          <th>Direction C: Systems Instrument</th>
+          <th>Direction D: Editorial Minimal</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Brand Identity &amp; Originality</strong></td>
+          <td>★★★★★ Distinctive, calm, warm engineering character</td>
+          <td>★★★☆☆ Clean but resembles standard code editor</td>
+          <td>★★★★☆ High tech, slightly busy</td>
+          <td>★★★☆☆ Feels like a blog/publishing tool</td>
+        </tr>
+        <tr>
+          <td><strong>Ease of Understanding</strong></td>
+          <td>★★★★★ Clear visual hierarchy, accessible surfaces</td>
+          <td>★★★★☆ High density, slightly dry</td>
+          <td>★★★☆☆ Graph-heavy, high initial cognitive load</td>
+          <td>★★★★☆ Low visual noise, but weak status clues</td>
+        </tr>
+        <tr>
+          <td><strong>Chat Usability &amp; Proportions</strong></td>
+          <td>★★★★★ Centered column, legible bubbles &amp; metrics</td>
+          <td>★★★★☆ Functional but cramped</td>
+          <td>★★★★☆ Good, but telemetry competes with text</td>
+          <td>★★★★☆ Great typography, lacks action buttons</td>
+        </tr>
+        <tr>
+          <td><strong>Technical Data Density</strong></td>
+          <td>★★★★★ Compact badges, layer strips, clean tables</td>
+          <td>★★★★★ Monospace tables, dense chips</td>
+          <td>★★★★☆ Dense topology and meters</td>
+          <td>★★☆☆☆ Too spacious for deep cluster metrics</td>
+        </tr>
+        <tr>
+          <td><strong>Mobile &amp; Responsive Adaptability</strong></td>
+          <td>★★★★★ Seamless folding, touch-friendly pills</td>
+          <td>★★★★☆ Good, tabs fit easily</td>
+          <td>★★★☆☆ Graph diagram wraps awkwardly on 320px</td>
+          <td>★★★★☆ Clean text reflow</td>
+        </tr>
+        <tr>
+          <td><strong>WCAG 2.2 AA Accessibility</strong></td>
+          <td>★★★★★ Contrast &gt; 5.8:1, clear focus rings</td>
+          <td>★★★★☆ High contrast, small font sizes</td>
+          <td>★★★★☆ Good contrast, relies heavily on blue</td>
+          <td>★★★★☆ High contrast, subtle borders</td>
+        </tr>
+        <tr>
+          <td><strong>Selected Outcome</strong></td>
+          <td><span class="badge-winner">SELECTED WINNER</span></td>
+          <td>Alternative Reference</td>
+          <td>Topology element adopted</td>
+          <td>Rejected for technical tool</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="margin-top: 16px; font-size: 13px; color: #4A5550; line-height: 1.5;">
+      <strong>Architectural Decision Synthesis:</strong> Direction A (Warm Engineering Workbench) with selective topological clarity from Direction C is selected as the production design system. It establishes an authentic, calm engineering identity without generic dark mode or SaaS marketing tropes.
+    </div>
+  </section>
+
+</body>
+</html>

@@ -351,11 +351,11 @@ public:
       res.total_capacity_available = dynamic_capacity_sum;
 
       if (dynamic_capacity_sum < act_gpu_layers) {
-        res.success = false;
-        res.error_message = "Insufficient dynamic capacity: total available layer capacity (" +
-                            std::to_string(dynamic_capacity_sum) + ") is less than requested offload layers (" +
-                            std::to_string(act_gpu_layers) + ")";
-        return res;
+        std::cerr << "[Policy] Dynamic capacity (" << dynamic_capacity_sum
+                  << " layers) is less than requested offload (" << act_gpu_layers
+                  << " layers). Gracefully clamping offload to available capacity.\n";
+        act_gpu_layers = dynamic_capacity_sum;
+        res.total_offload_layers_requested = act_gpu_layers;
       }
 
       // Exact GGML cumulative normalized split simulation
@@ -370,14 +370,18 @@ public:
         splits[i] = split_sum;
       }
 
-      if (split_sum <= 0.0f) {
+      // A zero-layer offload request is valid CPU-only placement. There is
+      // nothing to distribute, so an empty split vector is not an error.
+      if (act_gpu_layers > 0 && split_sum <= 0.0f) {
         res.success = false;
         res.error_message = "All eligible dynamic backends have zero capacity";
         return res;
       }
 
-      for (size_t i = 0; i < splits.size(); ++i) {
-        splits[i] /= split_sum;
+      if (split_sum > 0.0f) {
+        for (size_t i = 0; i < splits.size(); ++i) {
+          splits[i] /= split_sum;
+        }
       }
 
       int i_gpu_start = std::max(n_all_with_output - act_gpu_layers, 0);
@@ -445,14 +449,15 @@ public:
 
     res.total_capacity_available = total_capacity_sum;
 
-    // Check if total simulated capacity satisfies requested offload layers
+    // If total simulated capacity is less than requested offload layers,
+    // gracefully clamp to the available capacity rather than aborting.
+    // Remaining model layers naturally execute on Host CPU RAM.
     if (total_capacity_sum < act_gpu_layers) {
-      res.success = false;
-      res.error_message = "Insufficient simulated capacity: total available layer capacity (" +
-                          std::to_string(total_capacity_sum) +
-                          ") is less than requested offload layers (" +
-                          std::to_string(act_gpu_layers) + ")";
-      return res;
+      std::cerr << "[Policy] Simulated capacity (" << total_capacity_sum
+                << " layers) is less than requested offload (" << act_gpu_layers
+                << " layers). Gracefully clamping offload to available capacity.\n";
+      act_gpu_layers = total_capacity_sum;
+      res.total_offload_layers_requested = act_gpu_layers;
     }
 
     // 4. Simulate exact GGML cumulative normalized split to compute predicted layers
@@ -467,14 +472,18 @@ public:
       splits[i] = split_sum;
     }
 
-    if (split_sum <= 0.0f) {
+    // A zero-layer offload request is valid CPU-only placement. There is
+    // nothing to distribute, so an empty split vector is not an error.
+    if (act_gpu_layers > 0 && split_sum <= 0.0f) {
       res.success = false;
       res.error_message = "All eligible backends have zero capacity";
       return res;
     }
 
-    for (size_t i = 0; i < splits.size(); ++i) {
-      splits[i] /= split_sum;
+    if (split_sum > 0.0f) {
+      for (size_t i = 0; i < splits.size(); ++i) {
+        splits[i] /= split_sum;
+      }
     }
 
     // Determine layer start index matching llama-model.cpp:

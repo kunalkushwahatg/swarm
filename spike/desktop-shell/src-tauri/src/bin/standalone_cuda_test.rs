@@ -223,11 +223,16 @@ fn main() {
     let job = Arc::new(JobObject::new().expect("Failed to initialize Windows Job Object"));
     let manager = Arc::new(ProcessManager::new(Arc::clone(&job)));
     let orchestrator = Arc::new(Orchestrator::new(Arc::clone(&manager)));
-    let state = SupervisorState {
-        manager: manager.clone(),
-        orchestrator: orchestrator.clone(),
-        workspace_root: workspace_root.clone(),
-    };
+    let worker_manager = Arc::new(app_lib::supervisor::WorkerModeManager::new(
+        manager.clone(),
+        workspace_root.clone(),
+    ));
+    let state = SupervisorState::new(
+        manager.clone(),
+        orchestrator.clone(),
+        worker_manager,
+        workspace_root.clone(),
+    );
 
     let launch_options = StartEngineOptions {
         mode: Some("real".to_string()),

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { MessageSquare, HardDrive, Layers, Settings } from "lucide-react";
+import { MessageSquare, HardDrive, Layers, Settings, Server, Boxes } from "lucide-react";
 
-export type View = "chat" | "devices" | "session" | "settings";
+export type View = "chat" | "devices" | "models" | "session" | "worker" | "settings";
 
 interface NavItemProps {
   id: string;
@@ -44,11 +44,25 @@ export function Sidebar({ current, onChange }: SidebarProps) {
           onClick={() => onChange("chat")}
         />
         <NavItem
+          id="nav-models"
+          icon={<Boxes size={16} />}
+          label="Models"
+          active={current === "models"}
+          onClick={() => onChange("models")}
+        />
+        <NavItem
           id="nav-devices"
           icon={<HardDrive size={16} />}
           label="Devices"
           active={current === "devices"}
           onClick={() => onChange("devices")}
+        />
+        <NavItem
+          id="nav-worker"
+          icon={<Server size={16} />}
+          label="Share Compute"
+          active={current === "worker"}
+          onClick={() => onChange("worker")}
         />
         <NavItem
           id="nav-session"

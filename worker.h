@@ -6,6 +6,7 @@
 #include <optional>
 #include <chrono>
 #include <cstdint>
+#include <mutex>
 #include <ggml-backend.h>
 
 #ifdef _WIN32
@@ -13,6 +14,8 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#else
+#include <sys/types.h>
 #endif
 
 enum class WorkerType {
@@ -56,6 +59,7 @@ struct WorkerInfo {
     std::optional<std::string> backend_id;
     std::optional<std::string> backend_type;
     bool is_loopback;
+    std::string cache_dir;             // Optional cache directory for locally managed workers
     std::string memory_scope;
     std::vector<int> assigned_layers;
     std::vector<std::pair<int, int>> assigned_layer_ranges;
@@ -103,8 +107,19 @@ public:
     void stop_local_workers();
 
     // Check the readiness of a worker (by trying to connect to its RPC port)
-    // Updates the worker state accordingly
+    // Updates the worker state accordingly. This overload only updates the
+    // supplied snapshot and is intended for isolated unit tests.
     void check_worker_health(WorkerInfo& worker);
+
+    // Thread-safe health check by stable worker ID. The network probe runs
+    // without holding the registry lock; only the resulting state transition
+    // is written back under the lock.
+    void check_worker_health(const std::string& id);
+
+    // Mark every worker that participates in the loaded model as busy for the
+    // duration of one generation. Returns the IDs that were marked.
+    std::vector<std::string> begin_inference();
+    void end_inference(const std::vector<std::string>& ids);
 
     // Checks if the coordinator has an active TCP connection to this worker or if it is reachable
     bool is_worker_connected_or_reachable(const WorkerInfo& worker, int timeout_ms = 2000);
@@ -115,16 +130,37 @@ public:
     // Retain a registered RPC device for the lifetime of the model.
     void add_rpc_device(ggml_backend_dev_t device);
 
-    // Get a reference to the worker info by ID (for updating state, etc.)
-    std::optional<std::reference_wrapper<WorkerInfo>> get_worker(const std::string& id);
+    // Get a copy of a worker by ID. Callers never receive a reference into the
+    // mutable registry, so concurrent additions cannot invalidate it.
+    std::optional<WorkerInfo> get_worker(const std::string& id) const;
 
-    // Get all workers
-    std::vector<WorkerInfo>& get_workers();
-    const std::vector<WorkerInfo>& get_workers() const;
+    // Get a snapshot of all workers. Returning by value keeps callers from
+    // iterating a vector that another thread may be mutating.
+    std::vector<WorkerInfo> get_workers() const;
+
+    // Apply a short, field-level update while holding the registry lock.
+    template <typename F>
+    bool update_worker(const std::string& id, F&& updater) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto& worker : workers_) {
+            if (worker.id == id) {
+                updater(worker);
+                return true;
+            }
+        }
+        return false;
+    }
 
 private:
+    bool is_managed_process_running_locked(const WorkerInfo& worker) const;
+
+    mutable std::mutex mutex_;
     std::vector<WorkerInfo> workers_;
+#ifdef _WIN32
     std::vector<HANDLE> worker_processes_; // For Windows, to track the processes we started
+#else
+    std::vector<pid_t> worker_processes_;  // For POSIX, to track child processes
+#endif
     std::vector<ggml_backend_dev_t> rpc_devices_;
 };
 

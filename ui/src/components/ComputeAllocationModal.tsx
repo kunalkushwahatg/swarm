@@ -6,6 +6,7 @@ import {
   type RuntimePlacementReport,
   type RuntimePlacementBackend,
 } from "../lib/supervisor";
+import { X, Sliders, Info, CheckCircle2, AlertTriangle, ShieldCheck, Loader2, RefreshCw } from "lucide-react";
 
 interface ComputeAllocationModalProps {
   isOpen: boolean;
@@ -35,15 +36,104 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
     updated_at_ms: Date.now(),
   });
   const [hasBackup, setHasBackup] = useState(false);
-  const [activePolicy, setActivePolicy] = useState("dynamic");
+  const [activePolicy, setActivePolicy] = useState("Unavailable");
   const [preview, setPreview] = useState<AllocationPlanPreview | null>(null);
-  const [savedConfig, setSavedConfig] = useState<ComputeAllocationConfig | null>(null);
+  const [_savedConfig, setSavedConfig] = useState<ComputeAllocationConfig | null>(null);
   const [savedPreview, setSavedPreview] = useState<AllocationPlanPreview | null>(null);
   const [runtimePlacement, setRuntimePlacement] = useState<RuntimePlacementReport | null>(null);
   const [layerViewMode, setLayerViewMode] = useState<"proposed" | "saved" | "runtime">("proposed");
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [showArchNotes, setShowArchNotes] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+
+  const layerBasisFor = (cfg: ComputeAllocationConfig, plan: AllocationPlanPreview | null) => {
+    const modelLayers = plan?.model_total_layers || plan?.total_model_layers || 0;
+    return cfg.total_offload_layers > 0
+      ? Math.min(cfg.total_offload_layers, modelLayers)
+      : modelLayers;
+  };
+
+  const mbPerLayerFor = (plan: AllocationPlanPreview | null) =>
+    Math.max(1, Math.ceil((plan?.estimated_bytes_per_layer || 93 * 1024 * 1024) / (1024 * 1024)));
+
+  // Budgets are the value the native resource-aware policy actually consumes.
+  // Round each device up by at most one layer so integer division in the native
+  // capacity estimator cannot make a proportional split one layer short.
+  const budgetForWeight = (weight: number, layerBasis: number, mbPerLayer: number) => {
+    if (weight <= 0) return 0;
+    const desiredLayers = Math.max(1, Math.ceil(weight * layerBasis));
+    return desiredLayers * mbPerLayer + (mbPerLayer - 1);
+  };
+
+  const normalizeManualBudgets = (
+    cfg: ComputeAllocationConfig,
+    plan: AllocationPlanPreview | null,
+    changedDeviceId?: string,
+  ): ComputeAllocationConfig => {
+    if (cfg.mode !== "manual") return cfg;
+
+    const settings = cfg.device_settings.map((setting) => ({ ...setting }));
+    const enabled = settings.filter((setting) => setting.enabled);
+    if (enabled.length === 0) return cfg;
+
+    const layerBasis = layerBasisFor(cfg, plan);
+    const mbPerLayer = mbPerLayerFor(plan);
+    const lockedWeight = enabled
+      .filter((setting) => setting.locked_split)
+      .reduce((sum, setting) => sum + Math.max(0, setting.split_weight || 0), 0);
+    const unlocked = enabled.filter((setting) => !setting.locked_split);
+    const targetUnlockedWeight = Math.max(0, 1 - lockedWeight);
+
+    if (unlocked.length > 0) {
+      if (changedDeviceId) {
+        const moved = unlocked.find((setting) => setting.device_id === changedDeviceId);
+        const others = unlocked.filter((setting) => setting.device_id !== changedDeviceId);
+        if (moved) {
+          moved.split_weight = Math.min(
+            Math.max(0, moved.split_weight || 0),
+            targetUnlockedWeight,
+          );
+          if (others.length === 0) {
+            moved.split_weight = targetUnlockedWeight;
+          } else {
+            const remaining = Math.max(0, targetUnlockedWeight - (moved.split_weight || 0));
+            const otherWeightSum = others.reduce(
+              (sum, setting) => sum + Math.max(0, setting.split_weight || 0),
+              0,
+            );
+            for (const setting of others) {
+              setting.split_weight =
+                otherWeightSum > 0
+                  ? (remaining * Math.max(0, setting.split_weight || 0)) / otherWeightSum
+                  : remaining / others.length;
+            }
+          }
+        }
+      } else {
+        const currentWeightSum = unlocked.reduce(
+          (sum, setting) => sum + Math.max(0, setting.split_weight || 0),
+          0,
+        );
+        for (const setting of unlocked) {
+          setting.split_weight =
+            currentWeightSum > 0
+              ? (targetUnlockedWeight * Math.max(0, setting.split_weight || 0)) / currentWeightSum
+              : targetUnlockedWeight / unlocked.length;
+        }
+      }
+    }
+
+    for (const setting of enabled) {
+      setting.memory_budget_mb = budgetForWeight(
+        Math.max(0, setting.split_weight || 0),
+        layerBasis,
+        mbPerLayer,
+      );
+    }
+
+    return { ...cfg, device_settings: settings };
+  };
 
   // Load active allocation config & run initial preview
   const refreshConfig = async () => {
@@ -52,13 +142,24 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
     try {
       const res = await supervisor.getAllocationConfig();
       if (res) {
-        setConfig(res.config);
+        const savedPlan = await supervisor.previewAllocationPlan(res.config);
+        let editableConfig = res.config;
+        let editablePlan = savedPlan;
+        if (res.config.mode === "manual" && savedPlan) {
+          editableConfig = normalizeManualBudgets(res.config, savedPlan);
+          editablePlan = await supervisor.previewAllocationPlan(editableConfig);
+        }
+        setConfig(editableConfig);
         setSavedConfig(res.config);
         setHasBackup(res.has_backup);
         setActivePolicy(res.active_policy);
-        const p = await supervisor.previewAllocationPlan(res.config);
-        setPreview(p);
-        setSavedPreview(p);
+        setPreview(editablePlan);
+        setSavedPreview(savedPlan);
+      } else if (supervisor.isDesktop) {
+        setActionMessage({
+          type: "error",
+          text: "Allocation configuration could not be loaded from the desktop supervisor.",
+        });
       }
       const runtime = await supervisor.getRuntimePlacement();
       setRuntimePlacement(runtime);
@@ -73,23 +174,44 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen) {
-      refreshConfig();
-    }
+    if (!isOpen) return;
+
+    // Clear the previous plan so the modal never flashes stale defaults such
+    // as "All (37)" or "Unavailable" before the async preview resolves.
+    setPreview(null);
+    setSavedPreview(null);
+    setRuntimePlacement(null);
+    setLayerViewMode("proposed");
+    setActionMessage(null);
+    setLoading(true);
+    void refreshConfig();
   }, [isOpen]);
 
-  // Recalculate preview when user alters parameters
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !applying) {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, applying, onClose]);
+
   const updatePreview = async (updatedConfig: ComputeAllocationConfig) => {
     try {
       const p = await supervisor.previewAllocationPlan(updatedConfig);
-      setPreview(p);
+      if (p) {
+        setPreview(p);
+      }
     } catch (err: any) {
       console.warn("Preview failed:", err);
     }
   };
 
   const handleModeChange = (mode: "automatic" | "manual") => {
-    const updated: ComputeAllocationConfig = { ...config, mode };
+    const base: ComputeAllocationConfig = { ...config, mode };
+    const updated = mode === "manual" ? normalizeManualBudgets(base, preview) : base;
     setConfig(updated);
     updatePreview(updated);
   };
@@ -107,7 +229,8 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
   };
 
   const handleLayersChange = (layers: number) => {
-    const updated: ComputeAllocationConfig = { ...config, total_offload_layers: layers };
+    const base: ComputeAllocationConfig = { ...config, total_offload_layers: layers };
+    const updated = normalizeManualBudgets(base, preview);
     setConfig(updated);
     updatePreview(updated);
   };
@@ -115,16 +238,80 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
   const handleDeviceToggle = (deviceId: string, enabled: boolean) => {
     const nextSettings = [...config.device_settings];
     const idx = nextSettings.findIndex((s) => s.device_id === deviceId);
+    const devInfo = preview?.device_plans?.find((d) => d.device_id === deviceId);
     if (idx >= 0) {
-      nextSettings[idx] = { ...nextSettings[idx], enabled };
+      const seedWeight =
+        enabled && (!nextSettings[idx].split_weight || nextSettings[idx].split_weight <= 0)
+          ? 0.1
+          : nextSettings[idx].split_weight;
+      nextSettings[idx] = { ...nextSettings[idx], enabled, split_weight: seedWeight };
     } else {
       nextSettings.push({
         device_id: deviceId,
-        device_name: deviceId,
-        backend_type: "rpc",
+        device_name: devInfo?.device_name || deviceId,
+        backend_type: devInfo?.backend_type || "rpc",
         enabled,
-        memory_budget_mb: 2000,
-        is_loopback: deviceId.includes("127.0.0.1"),
+        memory_budget_mb: devInfo?.planned_budget_mb || 1024,
+        is_loopback: devInfo?.is_loopback ?? false,
+        split_weight: enabled ? 0.1 : 0,
+        locked_split: false,
+      });
+    }
+    const base: ComputeAllocationConfig = { ...config, device_settings: nextSettings };
+    const updated = normalizeManualBudgets(base, preview);
+    setConfig(updated);
+    updatePreview(updated);
+  };
+
+  const handleDeviceSplitWeightChange = (deviceId: string, weightPct: number) => {
+    const nextSettings = [...config.device_settings];
+    const idx = nextSettings.findIndex((s) => s.device_id === deviceId);
+    const weight = Math.max(0, Math.min(1, weightPct / 100.0));
+    const devInfo = preview?.device_plans?.find((d) => d.device_id === deviceId);
+
+    if (idx >= 0) {
+      nextSettings[idx] = {
+        ...nextSettings[idx],
+        split_weight: weight,
+        device_name: nextSettings[idx].device_name || devInfo?.device_name || deviceId,
+        backend_type: nextSettings[idx].backend_type || devInfo?.backend_type || "rpc",
+        is_loopback: nextSettings[idx].is_loopback ?? devInfo?.is_loopback ?? false,
+      };
+    } else {
+      nextSettings.push({
+        device_id: deviceId,
+        device_name: devInfo?.device_name || deviceId,
+        backend_type: devInfo?.backend_type || "rpc",
+        enabled: true,
+        split_weight: weight,
+        memory_budget_mb: 0,
+        is_loopback: devInfo?.is_loopback ?? false,
+        locked_split: false,
+      });
+    }
+
+    const base: ComputeAllocationConfig = { ...config, device_settings: nextSettings };
+    const updated = normalizeManualBudgets(base, preview, deviceId);
+    setConfig(updated);
+    updatePreview(updated);
+  };
+
+  const handleDeviceLockToggle = (deviceId: string, locked: boolean) => {
+    const nextSettings = [...config.device_settings];
+    const idx = nextSettings.findIndex((s) => s.device_id === deviceId);
+    const devInfo = preview?.device_plans?.find((d) => d.device_id === deviceId);
+    if (idx >= 0) {
+      nextSettings[idx] = { ...nextSettings[idx], locked_split: locked };
+    } else {
+      nextSettings.push({
+        device_id: deviceId,
+        device_name: devInfo?.device_name || deviceId,
+        backend_type: devInfo?.backend_type || "rpc",
+        enabled: true,
+        memory_budget_mb: devInfo?.planned_budget_mb || 1024,
+        is_loopback: devInfo?.is_loopback ?? false,
+        split_weight: devInfo?.split_weight || 0,
+        locked_split: locked,
       });
     }
     const updated: ComputeAllocationConfig = { ...config, device_settings: nextSettings };
@@ -132,22 +319,40 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
     updatePreview(updated);
   };
 
-  const handleDeviceBudgetChange = (deviceId: string, budgetMb: number) => {
+  const handleUseOnlineDevices = () => {
+    const plans = preview?.device_plans || [];
+    if (plans.length === 0) return;
+
     const nextSettings = [...config.device_settings];
-    const idx = nextSettings.findIndex((s) => s.device_id === deviceId);
-    if (idx >= 0) {
-      nextSettings[idx] = { ...nextSettings[idx], memory_budget_mb: budgetMb };
-    } else {
-      nextSettings.push({
-        device_id: deviceId,
-        device_name: deviceId,
-        backend_type: "rpc",
-        enabled: true,
-        memory_budget_mb: budgetMb,
-        is_loopback: deviceId.includes("127.0.0.1"),
-      });
+    for (const dev of plans) {
+      const enabled = dev.is_online !== false;
+      const idx = nextSettings.findIndex((setting) => setting.device_id === dev.device_id);
+      if (idx >= 0) {
+        nextSettings[idx] = {
+          ...nextSettings[idx],
+          enabled,
+          split_weight: enabled
+            ? Math.max(0.1, nextSettings[idx].split_weight || 0)
+            : 0,
+        };
+      } else {
+        nextSettings.push({
+          device_id: dev.device_id,
+          device_name: dev.device_name,
+          backend_type: dev.backend_type,
+          enabled,
+          memory_budget_mb: enabled
+            ? dev.planned_budget_mb || Math.max(1024, dev.usable_budget_mb || 0)
+            : 0,
+          is_loopback: dev.is_loopback,
+          split_weight: enabled ? 0.1 : 0,
+          locked_split: false,
+        });
+      }
     }
-    const updated: ComputeAllocationConfig = { ...config, device_settings: nextSettings };
+
+    const base: ComputeAllocationConfig = { ...config, device_settings: nextSettings };
+    const updated = normalizeManualBudgets(base, preview);
     setConfig(updated);
     updatePreview(updated);
   };
@@ -157,13 +362,21 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
     setActionMessage(null);
     try {
       const res = await supervisor.applyAllocationConfig(config, false);
-      setActionMessage({ type: "success", text: res.message });
-      setHasBackup(true);
-      setSavedConfig(config);
-      setSavedPreview(preview);
-      if (onPlanApplied) onPlanApplied();
+      if (res.success) {
+        setActionMessage({
+          type: "success",
+          text: "Configuration saved to disk. Staged for the next engine start.",
+        });
+        setSavedConfig(config);
+        setActivePolicy(config.mode === "automatic" ? "dynamic" : "resource_aware");
+        const p = await supervisor.previewAllocationPlan(config);
+        setSavedPreview(p);
+        setHasBackup(true);
+      } else {
+        setActionMessage({ type: "error", text: res.message });
+      }
     } catch (err: any) {
-      setActionMessage({ type: "error", text: err?.message || String(err) });
+      setActionMessage({ type: "error", text: `Failed to save configuration: ${err?.message || err}` });
     } finally {
       setApplying(false);
     }
@@ -172,19 +385,39 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
   const handleApplyAndRestart = async () => {
     setApplying(true);
     setActionMessage(null);
+    window.dispatchEvent(new CustomEvent("swarm-engine-starting"));
     try {
       const res = await supervisor.applyAllocationConfig(config, true);
-      setActionMessage({ type: "success", text: res.message });
-      setHasBackup(true);
-      setSavedConfig(config);
-      setSavedPreview(preview);
-      const runtime = await supervisor.getRuntimePlacement();
-      setRuntimePlacement(runtime);
-      if (onPlanApplied) onPlanApplied();
+      if (res.success) {
+        setActionMessage({
+          type: "success",
+          text: res.coordinator_restarted
+            ? "Configuration applied and coordinator restarted successfully."
+            : res.message,
+        });
+        setSavedConfig(config);
+        setActivePolicy(config.mode === "automatic" ? "dynamic" : "resource_aware");
+        const p = await supervisor.previewAllocationPlan(config);
+        setSavedPreview(p);
+        setHasBackup(true);
+        if (onPlanApplied) onPlanApplied();
+        const refreshRuntime = async () => {
+          try {
+            const runtime = await supervisor.getRuntimePlacement();
+            setRuntimePlacement(runtime);
+            setLayerViewMode("runtime");
+          } catch {}
+        };
+        setTimeout(refreshRuntime, 1500);
+        setTimeout(refreshRuntime, 3500);
+      } else {
+        setActionMessage({ type: "error", text: res.message });
+      }
     } catch (err: any) {
-      setActionMessage({ type: "error", text: err?.message || String(err) });
+      setActionMessage({ type: "error", text: `Apply failed: ${err?.message || err}` });
     } finally {
       setApplying(false);
+      window.dispatchEvent(new CustomEvent("swarm-engine-started"));
     }
   };
 
@@ -192,18 +425,22 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
     setApplying(true);
     setActionMessage(null);
     try {
-      const res = await supervisor.rollbackAllocationConfig(true);
-      setConfig(res.restored_config);
-      setSavedConfig(res.restored_config);
-      setActionMessage({ type: "success", text: res.message });
-      const p = await supervisor.previewAllocationPlan(res.restored_config);
-      setPreview(p);
-      setSavedPreview(p);
       const runtime = await supervisor.getRuntimePlacement();
-      setRuntimePlacement(runtime);
-      if (onPlanApplied) onPlanApplied();
+      const wasRunning = Boolean(runtime?.is_running);
+      const res = await supervisor.rollbackAllocationConfig(wasRunning);
+      if (res.success) {
+        await refreshConfig();
+        setActionMessage({
+          type: "info",
+          text: wasRunning && res.coordinator_restarted
+            ? "Rolled back to the previous configuration and restarted the coordinator."
+            : "Rolled back to the previous configuration. The restored plan will take effect on the next engine start.",
+        });
+      } else {
+        setActionMessage({ type: "error", text: res.message });
+      }
     } catch (err: any) {
-      setActionMessage({ type: "error", text: err?.message || String(err) });
+      setActionMessage({ type: "error", text: `Rollback failed: ${err?.message || err}` });
     } finally {
       setApplying(false);
     }
@@ -211,123 +448,312 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Single source of truth for total layers and per-layer cost
+  const totalLayers = preview?.model_total_layers ?? preview?.total_model_layers ?? 0;
+  const estimatedMbPerLayer = mbPerLayerFor(preview);
+  const showInitialLoading = loading && !preview;
+  const isEngineRunning = runtimePlacement?.is_running === true;
+  const offlineEnabledPlans = (preview?.device_plans || []).filter(
+    (dev) => dev.enabled && dev.is_online === false,
+  );
+  const onlineDisabledPlans = (preview?.device_plans || []).filter(
+    (dev) => !dev.enabled && dev.is_online !== false,
+  );
+  const canUseOnlineDevices =
+    offlineEnabledPlans.length > 0 && onlineDisabledPlans.length > 0;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden">
-        
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 50,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        background: "rgba(28, 36, 30, 0.5)",
+        backdropFilter: "blur(4px)",
+      }}
+      onClick={applying ? undefined : onClose}
+    >
+      <div
+        className="card animate-fade-in"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Compute allocation and layer distribution"
+        aria-busy={showInitialLoading || applying}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          width: "100%",
+          maxWidth: 880,
+          maxHeight: "88vh",
+          background: "var(--color-surface)",
+          border: "1px solid var(--color-border)",
+          borderRadius: "var(--radius)",
+          boxShadow: "0 16px 44px rgba(28, 36, 30, 0.16)",
+          overflow: "hidden",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-900/60">
-          <div>
-            <div className="flex items-center gap-3">
-              <h2 className="text-lg font-bold text-zinc-100 flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
-                Compute Allocation & Layer Distribution
-              </h2>
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-mono uppercase bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                Policy: {preview?.placement_policy_env || activePolicy}
-              </span>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "16px 20px",
+            borderBottom: "1px solid var(--color-border)",
+            background: "var(--color-surface-subtle)",
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: "var(--radius-sm)",
+                background: "var(--color-accent-subtle)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--color-accent)",
+              }}
+            >
+              <Sliders size={16} />
             </div>
-            <p className="text-xs text-zinc-400 mt-1">
-              Configure tensor splitting, device memory budgets, and GPU/CPU offload for Qwen 2.5 3B (37 layers).
-            </p>
+            <div>
+              <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text)", margin: 0 }}>
+                Compute Allocation &amp; Layer Distribution
+              </h2>
+              <div style={{ fontSize: 11.5, color: "var(--color-text-2)", marginTop: 2 }}>
+                {showInitialLoading ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <Loader2 size={11} className="animate-spin" />
+                    Reading cluster telemetry…
+                  </span>
+                ) : (
+                  <>
+                    Active Policy: <span className="mono" style={{ color: "var(--color-accent)" }}>{activePolicy}</span> · Multi-backend proportional tensor split
+                  </>
+                )}
+              </div>
+            </div>
           </div>
+
           <button
+            type="button"
+            className="btn-ghost"
             onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-200 p-2 rounded-lg hover:bg-zinc-800/80 transition-colors"
-            title="Close"
+            disabled={applying}
+            style={{ padding: 4, height: 28, width: 28, borderRadius: "50%" }}
+            title="Close dialog"
           >
-            ✕
+            <X size={15} />
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 text-sm">
-          
-          {/* Action Message Alert */}
+        {/* Scrollable Content Body */}
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: "auto",
+            overflowX: "hidden",
+            padding: "18px 20px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 18,
+          }}
+        >
+          {/* Action Message Banner */}
           {actionMessage && (
             <div
-              className={`p-3.5 rounded-xl border text-xs flex items-center justify-between ${
-                actionMessage.type === "success"
-                  ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
-                  : actionMessage.type === "error"
-                  ? "bg-red-950/40 border-red-500/30 text-red-300"
-                  : "bg-cyan-950/40 border-cyan-500/30 text-cyan-300"
-              }`}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "8px 12px",
+                borderRadius: "var(--radius-sm)",
+                fontSize: 12,
+                background:
+                  actionMessage.type === "success"
+                    ? "var(--color-ok-bg)"
+                    : actionMessage.type === "error"
+                    ? "var(--color-error-bg)"
+                    : "var(--color-accent-subtle)",
+                color:
+                  actionMessage.type === "success"
+                    ? "var(--color-ok)"
+                    : actionMessage.type === "error"
+                    ? "var(--color-error)"
+                    : "var(--color-accent)",
+                border: `1px solid ${
+                  actionMessage.type === "success"
+                    ? "rgba(16, 185, 129, 0.3)"
+                    : actionMessage.type === "error"
+                    ? "rgba(239, 68, 68, 0.3)"
+                    : "rgba(14, 165, 233, 0.3)"
+                }`,
+              }}
             >
+              {actionMessage.type === "success" ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
               <span>{actionMessage.text}</span>
-              <button
-                onClick={() => setActionMessage(null)}
-                className="ml-3 text-xs opacity-60 hover:opacity-100"
-              >
-                ✕
-              </button>
             </div>
           )}
 
-          {/* Allocation Mode Tabs */}
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-              Allocation Mode
-            </label>
-            <div className="grid grid-cols-2 gap-3">
+          {showInitialLoading ? (
+            <div
+              style={{
+                flex: 1,
+                minHeight: 320,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 12,
+                padding: "40px 20px",
+                textAlign: "center",
+                color: "var(--color-text-2)",
+              }}
+            >
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: "50%",
+                  background: "var(--color-accent-subtle)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--color-accent)",
+                }}
+              >
+                <Loader2 size={21} className="animate-spin" />
+              </div>
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--color-text)" }}>
+                  Reading cluster telemetry
+                </div>
+                <div style={{ fontSize: 11.5, marginTop: 4, maxWidth: 380 }}>
+                  Checking available GPU, RPC, and CPU capacity before showing the allocation plan.
+                </div>
+              </div>
+              <div
+                style={{
+                  width: 240,
+                  height: 5,
+                  borderRadius: 999,
+                  overflow: "hidden",
+                  background: "var(--color-surface-sunken)",
+                }}
+              >
+                <div
+                  style={{
+                    width: "45%",
+                    height: "100%",
+                    borderRadius: 999,
+                    background: "var(--color-accent)",
+                    animation: "pulse 1.2s ease-in-out infinite",
+                  }}
+                />
+              </div>
+            </div>
+          ) : !preview ? (
+            <div
+              style={{
+                flex: 1,
+                minHeight: 260,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                padding: "32px 20px",
+                textAlign: "center",
+              }}
+            >
+              <AlertTriangle size={22} style={{ color: "var(--color-warn)" }} />
+              <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--color-text)" }}>
+                Allocation plan unavailable
+              </div>
+              <div style={{ fontSize: 11.5, color: "var(--color-text-2)", maxWidth: 420 }}>
+                The desktop supervisor did not return a device plan. Retry the preview, or restart the app if the issue persists.
+              </div>
               <button
                 type="button"
-                onClick={() => handleModeChange("automatic")}
-                className={`p-3.5 rounded-xl border text-left transition-all ${
-                  config.mode === "automatic"
-                    ? "bg-cyan-950/30 border-cyan-500/50 text-cyan-100 shadow-sm shadow-cyan-950/50"
-                    : "bg-zinc-900/40 border-zinc-800 text-zinc-400 hover:border-zinc-700"
-                }`}
+                className="btn-ghost"
+                onClick={() => void refreshConfig()}
+                style={{ padding: "6px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
               >
-                <div className="font-semibold text-sm flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${config.mode === "automatic" ? "bg-cyan-400" : "bg-zinc-600"}`} />
-                  Automatic Allocation (Dynamic Telemetry)
-                </div>
-                <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                  Measures live candidate RAM and VRAM. Automatically preserves safety headroom and partitions all 37 layers to maximize throughput.
-                </p>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleModeChange("manual")}
-                className={`p-3.5 rounded-xl border text-left transition-all ${
-                  config.mode === "manual"
-                    ? "bg-indigo-950/30 border-indigo-500/50 text-indigo-100 shadow-sm shadow-indigo-950/50"
-                    : "bg-zinc-900/40 border-zinc-800 text-zinc-400 hover:border-zinc-700"
-                }`}
-              >
-                <div className="font-semibold text-sm flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${config.mode === "manual" ? "bg-indigo-400" : "bg-zinc-600"}`} />
-                  Manual Allocation (Resource Aware)
-                </div>
-                <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                  Explicit per-device memory limits and layer offload target. Sets target memory budgets via <code className="text-indigo-300">SWARM_WORKER_PROFILES</code> to compute proportional tensor-split weights for model loading (note: advisory split weights, not an OS process memory ceiling).
-                </p>
+                <RefreshCw size={13} />
+                <span>Retry preview</span>
               </button>
             </div>
-          </div>
+          ) : (
+            <>
+          {/* Allocation Mode Selector & Global Headroom */}
+          <div
+            style={{
+              padding: "14px 16px",
+              background: "var(--color-surface-subtle)",
+              borderRadius: "var(--radius)",
+              border: "1px solid var(--color-border)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 14,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+              <span className="section-label" style={{ fontWeight: 600 }}>Allocation Policy Mode</span>
 
-          {/* Model Assumptions & Safety Headroom Controls */}
-          <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-zinc-300 text-xs uppercase tracking-wider">
-                Model Assumptions & Protected Headroom
-              </span>
-              <span className="text-xs text-zinc-400 font-mono">
-                Qwen 2.5 3B (Q4_K_M) • 37 Layers • ~93 MiB/layer (n_ctx=2048)
-              </span>
-            </div>
-            <div className="text-[11px] text-zinc-400 leading-relaxed bg-zinc-950/60 p-2.5 rounded border border-zinc-800/80">
-              <span className="text-zinc-300 font-semibold">Cost Calibration:</span> The 93 MiB/layer figure accounts for ~73 MiB weights + ~16 MiB KV cache (scaled linearly with context length) + ~2.25 MiB compute buffer + 2% margin. At context size 512, layer cost drops to ~81 MiB/layer; at context size 8192, layer cost increases to ~141 MiB/layer.
+              <div style={{ display: "flex", background: "var(--color-bg)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)", padding: 2 }}>
+                <button
+                  type="button"
+                  onClick={() => handleModeChange("automatic")}
+                  style={{
+                    padding: "4px 12px",
+                    borderRadius: "var(--radius-sm)",
+                    fontSize: 12,
+                    fontWeight: 500,
+                    border: "none",
+                    cursor: "pointer",
+                    background: config.mode === "automatic" ? "var(--color-accent)" : "transparent",
+                    color: config.mode === "automatic" ? "var(--color-accent-fg)" : "var(--color-text-2)",
+                    transition: "all var(--dur-fast)",
+                  }}
+                >
+                  Automatic (Dynamic Split)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleModeChange("manual")}
+                  style={{
+                    padding: "4px 12px",
+                    borderRadius: "var(--radius-sm)",
+                    fontSize: 12,
+                    fontWeight: 500,
+                    border: "none",
+                    cursor: "pointer",
+                    background: config.mode === "manual" ? "var(--color-accent)" : "transparent",
+                    color: config.mode === "manual" ? "var(--color-accent-fg)" : "var(--color-text-2)",
+                    transition: "all var(--dur-fast)",
+                  }}
+                >
+                  Manual (Per-Device Budgets)
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Global Sliders: RAM Headroom & VRAM Headroom */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
               {/* RAM Headroom */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-zinc-400">Host RAM Headroom:</span>
-                  <span className="font-mono text-cyan-400 font-bold">{config.reserved_headroom_ram_mb} MB</span>
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, marginBottom: 4 }}>
+                  <span style={{ color: "var(--color-text-2)" }}>Host RAM Safety Reserve:</span>
+                  <span className="mono" style={{ fontWeight: 600, color: "var(--color-accent)" }}>{config.reserved_headroom_ram_mb} MB</span>
                 </div>
                 <input
                   type="range"
@@ -336,18 +762,18 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
                   step="256"
                   value={config.reserved_headroom_ram_mb}
                   onChange={(e) => handleRamHeadroomChange(Number(e.target.value))}
-                  className="w-full accent-cyan-500 h-1.5 bg-zinc-800 rounded-lg cursor-pointer"
+                  style={{ width: "100%", accentColor: "var(--color-accent)", height: 4, cursor: "pointer" }}
                 />
-                <p className="text-[11px] text-zinc-500 leading-tight">
-                  Reserved for Windows OS, background apps, and RPC socket buffers.
-                </p>
+                <div style={{ fontSize: 11, color: "var(--color-text-3)", marginTop: 3 }}>
+                  Protected system memory for Windows OS processes.
+                </div>
               </div>
 
               {/* VRAM Headroom */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-zinc-400">GPU VRAM Headroom:</span>
-                  <span className="font-mono text-cyan-400 font-bold">{config.reserved_headroom_vram_mb} MB</span>
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, marginBottom: 4 }}>
+                  <span style={{ color: "var(--color-text-2)" }}>GPU VRAM Reserve:</span>
+                  <span className="mono" style={{ fontWeight: 600, color: "var(--color-accent)" }}>{config.reserved_headroom_vram_mb} MB</span>
                 </div>
                 <input
                   type="range"
@@ -356,556 +782,481 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
                   step="64"
                   value={config.reserved_headroom_vram_mb}
                   onChange={(e) => handleVramHeadroomChange(Number(e.target.value))}
-                  className="w-full accent-cyan-500 h-1.5 bg-zinc-800 rounded-lg cursor-pointer"
+                  style={{ width: "100%", accentColor: "var(--color-accent)", height: 4, cursor: "pointer" }}
                 />
-                <p className="text-[11px] text-zinc-500 leading-tight">
-                  Reserved for desktop display buffers and DWM compositor.
-                </p>
+                <div style={{ fontSize: 11, color: "var(--color-text-3)", marginTop: 3 }}>
+                  Reserved for desktop display and DWM compositor.
+                </div>
               </div>
 
-              {/* Total Layers Offloaded */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-zinc-400">Offloaded Layers:</span>
-                  <span className="font-mono text-cyan-400 font-bold">
-                    {config.total_offload_layers === -1 ? "All (37)" : `${config.total_offload_layers} / 37`}
+              {/* Offloaded Layers Limit */}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, marginBottom: 4 }}>
+                  <span style={{ color: "var(--color-text-2)" }}>Total Offloaded Layers:</span>
+                  <span className="mono" style={{ fontWeight: 600, color: "var(--color-accent)" }}>
+                    {config.total_offload_layers === -1 ? `All (${totalLayers})` : `${config.total_offload_layers} / ${totalLayers}`}
                   </span>
                 </div>
                 <input
                   type="range"
                   min="0"
-                  max="37"
+                  max={totalLayers}
                   step="1"
-                  value={config.total_offload_layers === -1 ? 37 : config.total_offload_layers}
+                  value={config.total_offload_layers === -1 ? totalLayers : config.total_offload_layers}
                   onChange={(e) => {
                     const val = Number(e.target.value);
-                    handleLayersChange(val === 37 ? -1 : val);
+                    handleLayersChange(val === totalLayers ? -1 : val);
                   }}
-                  className="w-full accent-cyan-500 h-1.5 bg-zinc-800 rounded-lg cursor-pointer"
+                  style={{ width: "100%", accentColor: "var(--color-accent)", height: 4, cursor: "pointer" }}
                 />
-                <p className="text-[11px] text-zinc-500 leading-tight">
-                  Layers beyond this limit remain on Host CPU memory.
-                </p>
+                <div style={{ fontSize: 11, color: "var(--color-text-3)", marginTop: 3 }}>
+                  Remaining layers execute on Host CPU memory.
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Visual Layer Distribution Bar with Proposed, Saved, and Confirmed Runtime Modes */}
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-zinc-400 uppercase tracking-wider text-[11px]">
-                  Compute Distribution
-                </span>
+          {/* Layer Distribution Projection & Runtime Comparison */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="section-label" style={{ fontWeight: 600 }}>Compute Distribution</span>
+
                 {/* 3-Way Mode Selector */}
-                <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg p-0.5 text-[11px]">
+                <div style={{ display: "flex", background: "var(--color-surface-subtle)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)", padding: 2 }}>
                   <button
                     type="button"
                     onClick={() => setLayerViewMode("proposed")}
-                    className={`px-2.5 py-1 rounded font-medium transition-colors ${
-                      layerViewMode === "proposed"
-                        ? "bg-zinc-700 text-white"
-                        : "text-zinc-400 hover:text-zinc-200"
-                    }`}
+                    style={{
+                      padding: "3px 10px",
+                      borderRadius: "var(--radius-sm)",
+                      fontSize: 11,
+                      fontWeight: 500,
+                      border: "none",
+                      cursor: "pointer",
+                      background: layerViewMode === "proposed" ? "var(--color-surface-elevated)" : "transparent",
+                      color: layerViewMode === "proposed" ? "var(--color-text)" : "var(--color-text-2)",
+                    }}
                   >
                     Proposed Plan
                   </button>
                   <button
                     type="button"
                     onClick={() => setLayerViewMode("saved")}
-                    className={`px-2.5 py-1 rounded font-medium transition-colors ${
-                      layerViewMode === "saved"
-                        ? "bg-cyan-800 text-cyan-100"
-                        : "text-zinc-400 hover:text-zinc-200"
-                    }`}
+                    style={{
+                      padding: "3px 10px",
+                      borderRadius: "var(--radius-sm)",
+                      fontSize: 11,
+                      fontWeight: 500,
+                      border: "none",
+                      cursor: "pointer",
+                      background: layerViewMode === "saved" ? "var(--color-accent-subtle)" : "transparent",
+                      color: layerViewMode === "saved" ? "var(--color-accent)" : "var(--color-text-2)",
+                    }}
                   >
                     Saved / Staged
                   </button>
                   <button
                     type="button"
                     onClick={() => setLayerViewMode("runtime")}
-                    className={`px-2.5 py-1 rounded font-medium flex items-center gap-1.5 transition-colors ${
-                      layerViewMode === "runtime"
-                        ? "bg-emerald-800 text-emerald-100"
-                        : "text-zinc-400 hover:text-zinc-200"
-                    }`}
+                    style={{
+                      padding: "3px 10px",
+                      borderRadius: "var(--radius-sm)",
+                      fontSize: 11,
+                      fontWeight: 500,
+                      border: "none",
+                      cursor: "pointer",
+                      background: layerViewMode === "runtime" ? "var(--color-ok-bg)" : "transparent",
+                      color: layerViewMode === "runtime" ? "var(--color-ok)" : "var(--color-text-2)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
                   >
                     <span>Confirmed Runtime</span>
-                    {runtimePlacement?.is_running && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    )}
+                    {runtimePlacement?.is_running && <span className="dot dot-ok" style={{ width: 5, height: 5 }} />}
                   </button>
                 </div>
               </div>
 
-              <div className="text-zinc-500 font-mono text-[11px]">
-                {layerViewMode === "proposed" ? (
-                  <span>
-                    {preview
-                      ? `${preview.planned_offload_layers} / 37 Proposed Offload (${preview.total_cluster_capacity_layers} Cap)`
-                      : "Calculating..."}
-                  </span>
-                ) : layerViewMode === "saved" ? (
-                  <span>
-                    {savedPreview
-                      ? `${savedPreview.planned_offload_layers} / 37 Saved Offload (${savedPreview.total_cluster_capacity_layers} Cap)`
-                      : "No saved profile"}
-                  </span>
-                ) : (
-                  <span>
-                    {runtimePlacement?.is_running
-                      ? `Policy: ${runtimePlacement.policy_name || "active"}`
-                      : "Engine Inactive"}
-                  </span>
-                )}
+              {/* Status note */}
+              <div className="mono" style={{ fontSize: 11, color: "var(--color-text-3)" }}>
+                {layerViewMode === "proposed"
+                  ? `${preview?.planned_offload_layers ?? preview?.total_offload_layers ?? totalLayers} / ${totalLayers} offloaded`
+                  : layerViewMode === "saved"
+                  ? `${savedPreview?.planned_offload_layers ?? totalLayers} / ${totalLayers} staged`
+                  : runtimePlacement?.is_running
+                  ? "Live Native Placement"
+                  : "Engine Inactive"}
               </div>
             </div>
 
-            {/* Mode 1 & 2: Proposed Plan or Saved/Staged Plan */}
-            {(layerViewMode === "proposed" || layerViewMode === "saved") && (() => {
-              const activePlan = layerViewMode === "proposed" ? preview : (savedPreview || preview);
-              const isSavedMode = layerViewMode === "saved";
-              const hasUnsavedChanges = Boolean(
-                savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig)
-              );
+            {/* Mode 1 & 2: Proposed or Saved Plan View */}
+            {(layerViewMode === "proposed" || layerViewMode === "saved") && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {/* Visual Proportional Split Bar */}
+                <div style={{ display: "flex", height: 28, background: "var(--color-surface-subtle)", borderRadius: "var(--radius-sm)", overflow: "hidden", border: "1px solid var(--color-border)" }}>
+                  {(() => {
+                    const activePlan = layerViewMode === "saved" ? savedPreview : preview;
+                    const devices = activePlan?.device_plans || [];
+                    const activeDevices = devices.filter((d) => d.enabled && (d.planned_layer_count > 0 || (d.split_weight_percent ?? 0) > 0));
 
-              if (!activePlan) {
-                return (
-                  <div className="p-4 rounded-lg bg-zinc-900 border border-zinc-800 text-center text-xs text-zinc-500">
-                    No allocation plan available.
-                  </div>
-                );
-              }
-
-              return (
-                <div className="space-y-3">
-                  {/* Status Note */}
-                  {isSavedMode && hasUnsavedChanges && (
-                    <div className="p-2 rounded bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300 flex items-center justify-between">
-                      <span>⚠️ Viewing saved configuration on disk. Sliders currently have unsaved changes in &quot;Proposed Plan&quot;.</span>
-                      <button
-                        type="button"
-                        onClick={() => setLayerViewMode("proposed")}
-                        className="underline hover:text-amber-100 font-semibold ml-2"
-                      >
-                        Switch to Proposed
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Primary: Proportional Tensor Split Bar */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                      <span className="font-semibold text-zinc-300">
-                        Primary: Proportional Tensor Split (model_params.tensor_split)
-                      </span>
-                      <span className="text-[10px] text-zinc-500 font-mono">
-                        Policy: {activePlan.placement_policy_env || "auto"}
-                      </span>
-                    </div>
-
-                    <div className="flex w-full h-9 bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden p-0.5 gap-0.5">
-                      {activePlan.device_plans
-                        .filter((p) => p.enabled && p.planned_layer_count > 0)
-                        .map((p) => {
-                          const isCuda = p.backend_type === "cuda";
-                          const isRpc = p.backend_type === "rpc";
-                          const bgClass = isCuda
-                            ? "bg-purple-600/90 text-purple-100"
-                            : isRpc
-                            ? "bg-cyan-600/90 text-cyan-100"
-                            : "bg-zinc-700 text-zinc-200";
-
-                          return (
-                            <div
-                              key={p.device_id}
-                              style={{ width: `${Math.max(6, p.split_weight_percent)}%` }}
-                              className={`flex flex-col items-center justify-center text-[10px] font-mono font-bold transition-all truncate px-1 rounded-sm ${bgClass}`}
-                              title={`${p.device_name}: ${p.split_weight_percent}% split (~${p.planned_layer_count} layers)`}
-                            >
-                              <span className="truncate">{p.device_name}</span>
-                              <span className="text-[9px] opacity-80">{p.split_weight_percent}% (~{p.planned_layer_count}L)</span>
-                            </div>
-                          );
-                        })}
-
-                      {/* CPU fallback segment */}
-                      {activePlan.planned_offload_layers < 37 && (
-                        <div
-                          style={{
-                            width: `${Math.max(
-                              6,
-                              Math.round(((37 - activePlan.planned_offload_layers) / 37) * 100)
-                            )}%`,
-                          }}
-                          className="flex flex-col items-center justify-center text-[10px] font-mono font-bold transition-all truncate px-1 rounded-sm bg-zinc-800 text-zinc-400"
-                          title={`Host CPU Fallback: ${37 - activePlan.planned_offload_layers} layers unallocated to accelerators`}
-                        >
-                          <span>Host CPU</span>
-                          <span className="text-[9px] opacity-80">{37 - activePlan.planned_offload_layers}L</span>
+                    if (activeDevices.length === 0) {
+                      return (
+                        <div style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "var(--color-text-3)" }}>
+                          100% Host CPU Memory
                         </div>
-                      )}
-                    </div>
-                  </div>
+                      );
+                    }
 
-                  {/* Secondary: Simulated 37-Layer Slice Projection */}
-                  <div className="space-y-1.5 pt-0.5">
-                    <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                      <span className="text-zinc-400 font-medium">
-                        Secondary: Simulated 37-Layer Slice Projection (~93 MiB/layer baseline)
-                      </span>
-                      <span className="text-[10px] text-zinc-500 italic">
-                        Derived from cumulative split boundaries
-                      </span>
-                    </div>
+                    return activeDevices.map((dev) => {
+                      const pct = dev.split_weight_percent || Math.round((dev.split_weight || 0) * 100);
+                      const isCuda = dev.backend_type === "cuda" || dev.backend_type === "local_cuda";
+                      const isRpc = dev.backend_type === "rpc";
+                      const bg = isCuda ? "var(--color-cuda)" : isRpc ? "var(--color-rpc)" : "var(--color-accent)";
 
-                    <div className="flex w-full h-7 bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden p-0.5 gap-0.5">
-                      {Array.from({ length: 37 }).map((_, idx) => {
-                        const assignedDevice = activePlan.device_plans.find((p) =>
-                          p.planned_layer_ranges.some(([start, end]) => idx >= start && idx <= end)
-                        );
-                        const isCuda = assignedDevice?.backend_type === "cuda";
-                        const isRpc = assignedDevice?.backend_type === "rpc";
-                        const isOffloaded = Boolean(assignedDevice);
-
-                        let bgClass = "bg-zinc-800 text-zinc-600";
-                        if (isCuda) bgClass = "bg-purple-600 text-purple-100";
-                        else if (isRpc) bgClass = "bg-cyan-600 text-cyan-100";
-                        else if (!isOffloaded) bgClass = "bg-zinc-700/60 text-zinc-400";
-
-                        return (
-                          <div
-                            key={idx}
-                            title={
-                              assignedDevice
-                                ? `Layer ${idx}: ${assignedDevice.device_name} (${assignedDevice.backend_type.toUpperCase()}) — Projected`
-                                : `Layer ${idx}: Host CPU Fallback`
-                            }
-                            className={`flex-1 flex items-center justify-center text-[9px] font-mono font-bold transition-all hover:opacity-80 cursor-default ${bgClass}`}
-                          >
-                            {idx}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Informational Disclosure Callout */}
-                  <div className="flex items-start gap-2 p-2.5 rounded-lg bg-zinc-950/70 border border-zinc-800/80 text-[11px] text-zinc-400">
-                    <span className="text-cyan-400 font-bold shrink-0">ℹ️ Architecture Note:</span>
-                    <p className="leading-relaxed">
-                      Llama.cpp partitions model tensors across devices using proportional split weights (<code className="text-cyan-300">model_params.tensor_split</code>). Continuous layer slices above are simulated projections derived from cumulative normalized split boundaries and calibrated ~93 MiB/layer memory requirements.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between text-[11px] text-zinc-400 pt-0.5">
-                    <div className="flex flex-wrap items-center gap-4">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-3 h-3 rounded bg-purple-600" />
-                        <span>Local CUDA GPU ({isSavedMode ? "Saved" : "Proposed"})</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-3 h-3 rounded bg-cyan-600" />
-                        <span>Distributed RPC Worker ({isSavedMode ? "Saved" : "Proposed"})</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-3 h-3 rounded bg-zinc-700/60" />
-                        <span>Host CPU Fallback</span>
-                      </div>
-                    </div>
-                    <span className="text-[10.5px] text-amber-400/90 font-medium">
-                      {isSavedMode ? "Saved Profile (Ready for Next Start)" : "Proposed Plan (Pending Save/Restart)"}
-                    </span>
-                  </div>
+                      return (
+                        <div
+                          key={dev.device_id}
+                          style={{
+                            width: `${Math.max(5, pct)}%`,
+                            background: bg,
+                            color: "#fff",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 10.5,
+                            fontWeight: 600,
+                            padding: "0 4px",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                          title={`${dev.device_name}: ${pct}% split weight (${dev.planned_layer_count} layers projected)`}
+                        >
+                          {dev.device_name} ({pct}%)
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
-              );
-            })()}
 
-            {/* Mode 2: Confirmed Native Runtime Placement */}
+                {/* Discrete Layer Projection Blocks */}
+                <div style={{ display: "flex", height: 24, gap: 1, borderRadius: "var(--radius-sm)", overflow: "hidden", background: "var(--color-surface-subtle)", padding: 2, border: "1px solid var(--color-border)" }}>
+                  {Array.from({ length: totalLayers }).map((_, idx) => {
+                    const activePlan = layerViewMode === "saved" ? savedPreview : preview;
+                    const devices = activePlan?.device_plans || [];
+                    const assignedDev = devices.find((d) => {
+                      const ranges = d.planned_layer_ranges || [];
+                      return ranges.some(([start, end]: [number, number]) => idx >= start && idx <= end);
+                    });
+
+                    const isCuda = assignedDev?.backend_type === "cuda" || assignedDev?.backend_type === "local_cuda";
+                    const isRpc = assignedDev?.backend_type === "rpc";
+                    const bg = isCuda ? "var(--color-cuda)" : isRpc ? "var(--color-rpc)" : assignedDev ? "var(--color-accent)" : "var(--color-surface-elevated)";
+
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          flex: 1,
+                          background: bg,
+                          color: assignedDev ? "#fff" : "var(--color-text-3)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 9,
+                          fontFamily: "var(--font-mono)",
+                          fontWeight: 600,
+                          cursor: "default",
+                        }}
+                        title={
+                          assignedDev
+                            ? `Layer ${idx}: ${assignedDev.device_name} (${assignedDev.backend_type.toUpperCase()}) — Projected`
+                            : `Layer ${idx}: Host CPU Fallback`
+                        }
+                      >
+                        {idx}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Legend */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-2)", paddingTop: 2 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-cuda)" }} />
+                      <span>Host CUDA GPU</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-rpc)" }} />
+                      <span>RPC Worker</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-surface-elevated)" }} />
+                      <span>Host CPU Fallback</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowArchNotes(!showArchNotes)}
+                    style={{ background: "transparent", border: "none", color: "var(--color-text-3)", display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 11 }}
+                  >
+                    <Info size={12} />
+                    <span>{showArchNotes ? "Hide Architecture Notes" : "Architecture & Calibration"}</span>
+                  </button>
+                </div>
+
+                {/* Collapsible Architecture Notes */}
+                {showArchNotes && (
+                  <div
+                    className="animate-fade-in"
+                    style={{
+                      padding: "10px 12px",
+                      background: "var(--color-surface-subtle)",
+                      borderRadius: "var(--radius-sm)",
+                      border: "1px solid var(--color-border)",
+                      fontSize: 11.5,
+                      color: "var(--color-text-2)",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Llama.cpp splits model weights across devices using proportional split weights (<code className="mono" style={{ color: "var(--color-accent)" }}>model_params.tensor_split</code>). Discrete layer blocks above illustrate estimated placement boundaries based on ~{estimatedMbPerLayer} MiB/layer for the selected GGUF model and the configured device budgets.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Mode 3: Confirmed Runtime Placement */}
             {layerViewMode === "runtime" && (
-              <>
+              <div
+                style={{
+                  minHeight: 110,
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  padding: "16px",
+                  background: "var(--color-surface-subtle)",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--color-border)",
+                  gap: 10,
+                }}
+              >
                 {!runtimePlacement?.is_running ? (
-                  <div className="p-4 rounded-lg bg-zinc-900 border border-dashed border-zinc-800 text-center space-y-1.5">
-                    <div className="text-xs font-semibold text-zinc-300">
+                  <div style={{ textAlign: "center", color: "var(--color-text-2)" }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text)" }}>
                       Native Inference Engine Stopped
                     </div>
-                    <div className="text-[11px] text-zinc-500 max-w-md mx-auto">
-                      Coordinator process is not currently running. Start or restart the coordinator to load the model and view live hardware placement.
+                    <div style={{ fontSize: 11.5, marginTop: 4, maxWidth: 440, margin: "4px auto 0" }}>
+                      Start or restart the coordinator to load the model across hardware backends and view confirmed live placement.
                     </div>
                   </div>
-                ) : runtimePlacement.backends.some((b: RuntimePlacementBackend) => b.assigned_layers && b.assigned_layers.length > 0) ? (
-                  <>
-                    <div className="flex w-full h-8 bg-zinc-900 border border-emerald-900/60 rounded-lg overflow-hidden p-0.5 gap-0.5">
-                      {Array.from({ length: 37 }).map((_, idx) => {
-                        const assignedBackend = runtimePlacement.backends.find(
-                          (b: RuntimePlacementBackend) => b.assigned_layers && b.assigned_layers.includes(idx)
-                        );
-                        const isCuda = assignedBackend?.backend_type === "cuda";
-                        const isRpc = assignedBackend?.backend_type === "rpc";
-                        const isAssigned = Boolean(assignedBackend);
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {/* Visual Confirmed Runtime Split Bar */}
+                    <div style={{ display: "flex", height: 28, borderRadius: "var(--radius-sm)", overflow: "hidden", border: "1px solid var(--color-border)" }}>
+                      {(runtimePlacement?.backends || []).map((b: RuntimePlacementBackend) => {
+                        const isCuda = b.backend_type === "cuda" || b.backend_type === "local_cuda";
+                        const isRpc = b.backend_type === "rpc";
+                        const bg = isCuda ? "var(--color-cuda)" : isRpc ? "var(--color-rpc)" : "var(--color-accent)";
+                        
+                        // Intelligent slice label based on layer counts and memory
+                        let sliceLabel = b.device_name || b.backend_id;
+                        if (isRpc) {
+                          sliceLabel = b.assigned_layers.length > 0
+                            ? `${b.device_name || "RPC"} (${b.assigned_layers.length}L)`
+                            : `${b.device_name || "RPC"} (Remote)`;
+                        } else if (b.model_buffer_bytes > 0) {
+                          sliceLabel = b.assigned_layers.length > 0
+                            ? `${b.device_name || "Device"} (${b.assigned_layers.length}L · ${formatBytes(b.model_buffer_bytes)})`
+                            : `${b.device_name || "Device"} (${formatBytes(b.model_buffer_bytes)})`;
+                        }
 
-                        let bgClass = "bg-zinc-800 text-zinc-600";
-                        if (isCuda) bgClass = "bg-purple-600 text-purple-100";
-                        else if (isRpc) bgClass = "bg-cyan-600 text-cyan-100";
-                        else if (!isAssigned) bgClass = "bg-zinc-700/60 text-zinc-400";
+                        const tooltip = `${b.device_name || b.backend_id} (${b.backend_type.toUpperCase()}): ${
+                          b.assigned_layers.length > 0
+                            ? `${b.assigned_layers.length} layers assigned · `
+                            : "Shared Overhead / Embeddings · "
+                        }${b.model_buffer_bytes > 0 ? formatBytes(b.model_buffer_bytes) : "Remote Worker RAM"}`;
+
+                        // Ensure narrow slices (like CPU overhead) have a minimum visible share and never overflow text
+                        const weight = Math.max(0.08, b.split_weight || (b.assigned_layers.length > 0 ? b.assigned_layers.length / (totalLayers || 33) : 0.08));
 
                         return (
                           <div
-                            key={idx}
-                            title={
-                              assignedBackend
-                                ? `Layer ${idx}: ${assignedBackend.device_name} (${assignedBackend.endpoint || assignedBackend.backend_type}) [CONFIRMED]`
-                                : `Layer ${idx}: Host CPU Memory`
-                            }
-                            className={`flex-1 flex items-center justify-center text-[10px] font-mono font-bold transition-all hover:opacity-80 cursor-default ${bgClass}`}
+                            key={b.backend_id || b.endpoint || Math.random().toString()}
+                            style={{
+                              flex: weight,
+                              minWidth: 0,
+                              background: bg,
+                              color: "#fff",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 10.5,
+                              fontWeight: 600,
+                              padding: "0 6px",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                            title={tooltip}
                           >
-                            {idx}
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {sliceLabel}
+                            </span>
                           </div>
                         );
                       })}
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between text-[11px] text-zinc-400 pt-1">
-                      <div className="flex flex-wrap items-center gap-4">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-3 h-3 rounded bg-purple-600" />
-                          <span>Local CUDA GPU (Confirmed)</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-3 h-3 rounded bg-cyan-600" />
-                          <span>Distributed RPC Worker (Confirmed)</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-3 h-3 rounded bg-zinc-700/60" />
-                          <span>Host CPU</span>
-                        </div>
-                      </div>
-                      <span className="text-[10.5px] text-emerald-400 font-semibold flex items-center gap-1">
-                        <span>✓ Authoritative Placement Confirmed by Engine Loader Logs</span>
-                      </span>
+                    {/* Dedicated Backend Legend Breakdown */}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px" }}>
+                      {(runtimePlacement?.backends || []).map((b: RuntimePlacementBackend) => {
+                        const isCuda = b.backend_type === "cuda" || b.backend_type === "local_cuda";
+                        const isRpc = b.backend_type === "rpc";
+                        const bg = isCuda ? "var(--color-cuda)" : isRpc ? "var(--color-rpc)" : "var(--color-accent)";
+                        const memStr = b.model_buffer_bytes > 0 ? formatBytes(b.model_buffer_bytes) : "Remote Worker RAM";
+                        const layerStr = b.assigned_layers.length > 0 ? `${b.assigned_layers.length} layers` : "Shared Buffer";
+
+                        return (
+                          <div key={b.backend_id || b.endpoint || Math.random().toString()} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: 2, background: bg, flexShrink: 0 }} />
+                            <strong style={{ color: "var(--color-text)" }}>{b.device_name || b.backend_id}:</strong>
+                            <span className="mono" style={{ color: "var(--color-text-2)" }}>{layerStr} ({memStr})</span>
+                          </div>
+                        );
+                      })}
                     </div>
 
-                    {/* Breakdown of confirmed layers per backend */}
-                    <div className="mt-2 p-2 rounded bg-zinc-900/80 border border-zinc-800 text-[11px] space-y-1">
-                      <div className="font-semibold text-zinc-300">
-                        Confirmed Engine Allocations (/backends):
-                      </div>
-                      {runtimePlacement.backends.map((b: RuntimePlacementBackend) => (
-                        <div
-                          key={b.backend_id || b.endpoint}
-                          className="flex items-center justify-between text-zinc-400 font-mono text-[10.5px]"
-                        >
-                          <span className="truncate max-w-[280px]">
-                            {b.device_name || b.backend_id} ({b.endpoint || b.backend_type}):
-                          </span>
-                          <span>
-                            {b.assigned_layers && b.assigned_layers.length > 0
-                              ? `${b.assigned_layers.length} layers [${
-                                  b.assigned_layer_ranges.length > 0
-                                    ? b.assigned_layer_ranges.map(([s, e]: [number, number]) => `${s}..${e}`).join(", ")
-                                    : b.assigned_layers.join(",")
-                                }]`
-                              : "0 layers (Fallback)"}
-                          </span>
-                        </div>
-                      ))}
+                    <div style={{ fontSize: 11, color: "var(--color-ok)", display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
+                      <CheckCircle2 size={13} />
+                      <span>Confirmed live hardware allocations via coordinator /backends IPC telemetry</span>
                     </div>
-                  </>
-                ) : (
-                  <>
-                    {/* Proportional Tensor Split Mode: When engine is active and splits tensors proportionally */}
-                    <div className="space-y-2">
-                      {/* Proportional Split Bar */}
-                      <div className="flex w-full h-8 bg-zinc-900 border border-emerald-900/60 rounded-lg overflow-hidden p-0.5 gap-0.5">
-                        {(() => {
-                          const activeBackends = runtimePlacement.backends.filter(
-                            (b: RuntimePlacementBackend) => (b.split_weight ?? 0) > 0 || (b.model_buffer_bytes ?? 0) > 0
-                          );
-                          const totalWeight = activeBackends.reduce(
-                            (acc: number, b: RuntimePlacementBackend) => acc + (b.split_weight ?? (b.model_buffer_bytes > 0 ? 1 : 0)),
-                            0
-                          );
-
-                          if (activeBackends.length === 0 || totalWeight <= 0) {
-                            return (
-                              <div className="w-full flex items-center justify-center text-xs text-zinc-500 font-mono">
-                                100% Host CPU Memory
-                              </div>
-                            );
-                          }
-
-                          return activeBackends.map((b: RuntimePlacementBackend) => {
-                            const weight = b.split_weight ?? (b.model_buffer_bytes > 0 ? 1 : 0);
-                            const percent = Math.max(5, Math.round((weight / totalWeight) * 100));
-                            const isCuda = b.backend_type === "cuda";
-                            const isRpc = b.backend_type === "rpc";
-                            const bgClass = isCuda
-                              ? "bg-purple-600 text-purple-100"
-                              : isRpc
-                              ? "bg-cyan-600 text-cyan-100"
-                              : "bg-zinc-700 text-zinc-200";
-
-                            return (
-                              <div
-                                key={b.backend_id || b.endpoint}
-                                style={{ width: `${percent}%` }}
-                                title={`${b.device_name || b.backend_id}: ${percent}% tensor split (${formatBytes(b.model_buffer_bytes)} buffer)`}
-                                className={`flex items-center justify-center text-[10px] font-mono font-bold transition-all truncate px-1 ${bgClass}`}
-                              >
-                                {b.device_name || b.backend_id} ({percent}%)
-                              </div>
-                            );
-                          });
-                        })()}
-                      </div>
-
-                      <div className="flex flex-wrap items-center justify-between text-[11px] text-zinc-400 pt-0.5">
-                        <span className="text-[10.5px] text-emerald-400 font-semibold flex items-center gap-1">
-                          <span>✓ Native Engine Active — Proportional Tensor Split Mode</span>
-                        </span>
-                        <span className="text-[10.5px] text-zinc-400 font-mono">
-                          model_params.tensor_split
-                        </span>
-                      </div>
-
-                      <div className="p-2.5 rounded bg-zinc-950/70 border border-zinc-800 text-[11px] space-y-1.5">
-                        <p className="text-zinc-400 leading-relaxed">
-                          The native llama.cpp / ggml-rpc runtime partitions model tensors across devices using proportional weights (<code className="text-indigo-300">model_params.tensor_split</code>). Discrete per-layer index ranges are only exposed when detailed loader debug logging is enabled. Confirmed memory allocations below reflect actual hardware buffers:
-                        </p>
-                        <div className="space-y-1 pt-1 border-t border-zinc-800/80">
-                          {runtimePlacement.backends.map((b: RuntimePlacementBackend) => (
-                            <div
-                              key={b.backend_id || b.endpoint}
-                              className="flex items-center justify-between text-zinc-300 font-mono text-[10.5px]"
-                            >
-                              <span className="truncate max-w-[280px]">
-                                {b.device_name || b.backend_id} ({b.endpoint || b.backend_type}):
-                              </span>
-                              <span className="text-right">
-                                Weights: <strong className="text-cyan-400">{formatBytes(b.model_buffer_bytes)}</strong> | KV: {formatBytes(b.kv_buffer_bytes)} | Split: {b.split_weight ?? 1.0}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </>
+                  </div>
                 )}
-              </>
+              </div>
             )}
           </div>
 
-          {/* Candidate & Connected Devices Table */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-zinc-400 uppercase tracking-wider">
-                Participating Compute Devices
-              </span>
-              <span className="text-zinc-500">
-                Toggling off excludes device from <code className="text-zinc-400">SWARM_RPC_ENDPOINTS</code>
-              </span>
-            </div>
+          {/* Participating Compute Devices Table */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <span className="section-label" style={{ fontWeight: 600 }}>Participating Compute Devices</span>
 
-            <div className="space-y-2.5">
-              {preview?.device_plans.map((dev) => {
-                const setting = config.device_settings.find((s) => s.device_id === dev.device_id);
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {(preview?.device_plans || []).map((dev) => {
+                const setting = (config.device_settings || []).find((s) => s.device_id === dev.device_id);
                 const isEnabled = setting ? setting.enabled : dev.enabled;
+                const splitPct = dev.split_weight_percent ?? Math.round((dev.split_weight ?? 0) * 100);
+                const isLocked = setting?.locked_split || false;
+                const isOffline = dev.is_online === false;
+                const isStale = dev.is_stale === true;
 
                 return (
                   <div
                     key={dev.device_id}
-                    className={`p-4 rounded-xl border transition-all ${
-                      isEnabled
-                        ? "bg-zinc-900/70 border-zinc-800"
-                        : "bg-zinc-950/40 border-zinc-900 opacity-60"
-                    }`}
+                    style={{
+                      padding: "12px 16px",
+                      background: isEnabled ? "var(--color-surface-subtle)" : "var(--color-surface-sunken)",
+                      border: `1px solid ${
+                        isOffline && isEnabled ? "rgba(154, 103, 0, 0.32)" : "var(--color-border)"
+                      }`,
+                      borderRadius: "var(--radius-sm)",
+                      opacity: isEnabled ? 1 : 0.6,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                    }}
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      {/* Checkbox & Details */}
-                      <div className="flex items-center gap-3">
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <input
                           type="checkbox"
                           checked={isEnabled}
                           onChange={(e) => handleDeviceToggle(dev.device_id, e.target.checked)}
-                          className="w-4 h-4 rounded accent-cyan-500 cursor-pointer"
+                          title={
+                            isOffline
+                              ? "This device is offline or unreachable. Enabling it makes the plan invalid."
+                              : `Include ${dev.device_name} in the allocation`
+                          }
+                          style={{ accentColor: "var(--color-accent)", cursor: "pointer" }}
                         />
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-zinc-200">{dev.device_name}</span>
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700 uppercase">
-                              {dev.backend_type}
-                            </span>
-                            {dev.is_loopback && (
-                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-800/60">
-                                Host Shared RAM
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-zinc-400 font-mono mt-0.5">
-                            {dev.device_id}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Capacity & Ranges */}
-                      <div className="text-right">
-                        <div className="text-sm font-bold text-zinc-100 font-mono">
-                          {dev.planned_layer_count} Layers{" "}
-                          <span className="text-xs text-zinc-400 font-normal">
-                            ({dev.split_weight_percent}% split)
+                        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text)" }}>
+                          {dev.device_name}
+                        </span>
+                        <span className="badge badge-idle" style={{ fontSize: 10 }}>
+                          {dev.backend_type.toUpperCase()}
+                        </span>
+                        {dev.is_loopback && (
+                          <span className="badge badge-warn" style={{ fontSize: 10 }}>
+                            Shares Host RAM
                           </span>
-                        </div>
-                        <div className="text-xs text-cyan-400 font-mono mt-0.5">
-                          {dev.planned_layer_ranges.length > 0
-                            ? dev.planned_layer_ranges.map(([s, e]) => `Layers ${s} - ${e}`).join(", ")
-                            : "No layers assigned"}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Telemetry Metrics & Budget Input */}
-                    <div className="mt-3 pt-3 border-t border-zinc-800/80 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                      <div>
-                        <span className="text-zinc-500 block text-[11px]">Hardware Usable</span>
-                        <span className="font-mono text-zinc-300 font-medium">{dev.usable_budget_mb} MB</span>
+                        )}
+                        {isOffline && (
+                          <span className="badge badge-offline" style={{ fontSize: 10 }}>
+                            Offline
+                          </span>
+                        )}
+                        {isStale && !isOffline && (
+                          <span className="badge badge-warn" style={{ fontSize: 10 }}>
+                            Stale telemetry
+                          </span>
+                        )}
                       </div>
 
-                      <div>
-                        <span className="text-zinc-500 block text-[11px]">Max Layer Capacity</span>
-                        <span className="font-mono text-zinc-300 font-medium">~{dev.estimated_layer_capacity} Layers</span>
-                      </div>
-
-                      {config.mode === "manual" ? (
-                        <div className="col-span-2 flex items-center justify-end gap-2">
-                          <label className="text-zinc-400 text-xs">Manual Budget:</label>
-                          <div className="flex items-center gap-1">
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 11.5 }}>
+                        <span style={{ color: "var(--color-text-2)" }}>
+                          Weight: <strong className="mono" style={{ color: "var(--color-accent)" }}>{splitPct}%</strong>
+                        </span>
+                        <span style={{ color: "var(--color-text-2)" }}>
+                          Layers: <strong className="mono" style={{ color: "var(--color-text)" }}>{dev.planned_layer_count}</strong>
+                        </span>
+                        {config.mode === "manual" && (
+                          <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: "var(--color-text-3)", fontSize: 11 }}>
                             <input
-                              type="number"
-                              min="200"
-                              max="32000"
-                              step="100"
-                              value={setting?.memory_budget_mb || dev.memory_budget_mb}
-                              onChange={(e) => handleDeviceBudgetChange(dev.device_id, Number(e.target.value))}
-                              disabled={!isEnabled}
-                              className="w-24 px-2.5 py-1 bg-zinc-950 border border-zinc-700 rounded-lg text-right font-mono text-xs text-indigo-300 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+                              type="checkbox"
+                              checked={isLocked}
+                              onChange={(e) => handleDeviceLockToggle(dev.device_id, e.target.checked)}
+                              style={{ accentColor: "var(--color-accent)" }}
                             />
-                            <span className="text-zinc-500 text-xs">MB</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="col-span-2 text-right">
-                          <span className="text-zinc-500 block text-[11px]">Control Enforcement</span>
-                          <span className="text-cyan-400 font-mono text-xs">
-                            {dev.control_type === "HARD_ENFORCED" ? "Hard-Enforced via RPC" : "Dynamic Tensor Split"}
-                          </span>
-                        </div>
-                      )}
+                            <span>Lock split</span>
+                          </label>
+                        )}
+                        {isOffline && isEnabled && (
+                          <button
+                            type="button"
+                            className="btn-ghost"
+                            onClick={() => handleDeviceToggle(dev.device_id, false)}
+                            title={`Disable ${dev.device_name} so it no longer blocks this plan`}
+                            style={{
+                              padding: "3px 8px",
+                              fontSize: 10.5,
+                              color: "var(--color-warn)",
+                              borderColor: "rgba(154, 103, 0, 0.3)",
+                            }}
+                          >
+                            Disable
+                          </button>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Warnings */}
-                    {dev.warnings.length > 0 && (
-                      <div className="mt-2 text-[11px] text-amber-400/90 bg-amber-950/30 border border-amber-800/40 rounded-lg px-2.5 py-1">
-                        ⚠️ {dev.warnings.join("; ")}
+                    {/* Manual Mode Budget / Split Slider */}
+                    {config.mode === "manual" && isEnabled && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 4 }}>
+                        <span style={{ fontSize: 11, color: "var(--color-text-3)", minWidth: 80 }}>Split Weight:</span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={splitPct}
+                          disabled={isLocked}
+                          onChange={(e) => handleDeviceSplitWeightChange(dev.device_id, Number(e.target.value))}
+                          style={{ flex: 1, accentColor: "var(--color-accent)", height: 4, cursor: isLocked ? "not-allowed" : "pointer" }}
+                        />
+                        <span className="mono" style={{ fontSize: 11.5, minWidth: 40, textAlign: "right" }}>{splitPct}%</span>
                       </div>
                     )}
                   </div>
@@ -915,89 +1266,167 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
           </div>
 
           {/* Validation & Risk Assessment Banner */}
-          {preview && (
-            <div
-              className={`p-4 rounded-xl border flex items-start gap-3 text-xs ${
-                preview.risk_level === "SAFE"
-                  ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-300"
-                  : preview.risk_level === "WARNING"
-                  ? "bg-amber-950/20 border-amber-500/30 text-amber-300"
-                  : preview.risk_level === "HIGH_RISK"
-                  ? "bg-orange-950/20 border-orange-500/30 text-orange-300"
-                  : "bg-red-950/20 border-red-500/30 text-red-300"
-              }`}
-            >
-              <div className="text-base">
-                {preview.risk_level === "SAFE" ? "🛡️" : preview.risk_level === "WARNING" ? "⚠️" : "🛑"}
-              </div>
-              <div className="flex-1 space-y-1">
-                <div className="font-bold uppercase tracking-wider text-[11px]">
-                  Safety Assessment: {preview.risk_level}
-                </div>
-                {preview.is_valid ? (
-                  <p className="text-xs leading-relaxed opacity-90">
-                    Configuration is valid. All {preview.planned_offload_layers} offload layers accommodated within cluster hardware limits with safe headroom margins.
-                  </p>
-                ) : (
-                  <div className="space-y-0.5">
-                    {preview.validation_errors.map((err, i) => (
-                      <p key={i} className="text-xs font-medium">❌ {err}</p>
-                    ))}
-                  </div>
+          <div
+            style={{
+              order: -1,
+              padding: "10px 14px",
+              borderRadius: "var(--radius-sm)",
+              fontSize: 12,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+              background: preview.is_valid ? "var(--color-ok-bg)" : "var(--color-error-bg)",
+              border: `1px solid ${preview.is_valid ? "rgba(30, 126, 89, 0.25)" : "rgba(185, 28, 28, 0.25)"}`,
+              color: preview.is_valid ? "var(--color-ok)" : "var(--color-error)",
+            }}
+          >
+            <ShieldCheck size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                <span>Safety Assessment: {preview.risk_level || "SAFE"}</span>
+                {!preview.is_valid && (
+                  <span className="badge badge-error" style={{ fontSize: 9.5 }}>
+                    Action required
+                  </span>
                 )}
-                {preview.validation_warnings.map((warn, i) => (
-                  <p key={i} className="text-[11px] opacity-80">⚠️ {warn}</p>
-                ))}
               </div>
+
+              {preview.is_valid ? (
+                <>
+                  <div style={{ fontSize: 11.5, opacity: 0.9, marginTop: 2 }}>
+                    {preview.planned_offload_layers ?? 0} / {preview.total_offload_layers ?? totalLayers} requested offload layers accommodated within hardware headroom margins.
+                  </div>
+                  {(preview.validation_warnings || []).length > 0 && (
+                    <ul style={{ margin: "5px 0 0 16px", padding: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+                      {(preview.validation_warnings || []).map((warning, idx) => (
+                        <li key={`${idx}-${warning}`}>{warning}</li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : (
+                <>
+                  <ul style={{ margin: "5px 0 0 16px", padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                    {(preview.validation_errors || []).length > 0 ? (
+                      (preview.validation_errors || []).map((error, idx) => (
+                        <li key={`${idx}-${error}`}>{error}</li>
+                      ))
+                    ) : (
+                      <li>The current plan cannot be applied.</li>
+                    )}
+                  </ul>
+                  <div style={{ fontSize: 11, opacity: 0.9, marginTop: 7 }}>
+                    Resolve the issues above, or use online devices to recover a valid plan.
+                  </div>
+                  {canUseOnlineDevices && (
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      onClick={handleUseOnlineDevices}
+                      style={{
+                        marginTop: 8,
+                        padding: "4px 10px",
+                        fontSize: 11.5,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        borderColor: "var(--color-error)",
+                        color: "var(--color-error)",
+                        background: "var(--color-surface)",
+                      }}
+                      title="Enable online devices and disable offline devices"
+                    >
+                      <RefreshCw size={12} />
+                      <span>Use online devices</span>
+                    </button>
+                  )}
+                </>
+              )}
             </div>
+          </div>
+            </>
           )}
         </div>
 
-        {/* Modal Footer Actions */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-t border-zinc-800 bg-zinc-900/80">
-          <div className="flex items-center gap-2">
+        {/* Modal Sticky Footer Actions */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "12px 20px",
+            borderTop: "1px solid var(--color-border)",
+            background: "var(--color-surface-subtle)",
+            flexShrink: 0,
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {hasBackup && (
               <button
                 type="button"
+                className="btn-ghost"
                 onClick={handleRollback}
                 disabled={applying || loading}
-                className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors disabled:opacity-50"
+                style={{ padding: "6px 12px", fontSize: 12 }}
+                title="Restore previous safe allocation backup"
               >
-                Rollback to Previous Backup
+                Rollback to Backup
               </button>
             )}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
               type="button"
+              className="btn-ghost"
               onClick={onClose}
               disabled={applying}
-              className="px-4 py-2 text-xs font-semibold rounded-xl border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition-colors"
+              style={{ padding: "6px 14px", fontSize: 12 }}
             >
-              Close
+              Cancel
             </button>
 
             <button
               type="button"
+              className="btn-ghost"
               onClick={handleSaveOnly}
               disabled={applying || loading || !preview?.is_valid}
-              className="px-4 py-2 text-xs font-semibold rounded-xl bg-zinc-800 text-cyan-300 border border-cyan-500/40 hover:bg-zinc-700 transition-colors disabled:opacity-50"
+              style={{ padding: "6px 14px", fontSize: 12, borderColor: "var(--color-accent)", color: "var(--color-accent)" }}
+              title={
+                !preview?.is_valid
+                  ? "Resolve the validation errors before saving this plan."
+                  : "Save to disk without restarting the coordinator"
+              }
             >
-              {applying ? "Saving..." : "Save Configuration"}
+              {applying ? "Saving…" : "Save Staged"}
             </button>
 
             <button
               type="button"
+              className="btn-primary"
               onClick={handleApplyAndRestart}
               disabled={applying || loading || !preview?.is_valid}
-              className="px-4 py-2 text-xs font-semibold rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-medium hover:from-cyan-500 hover:to-blue-500 transition-all shadow-lg shadow-cyan-900/30 disabled:opacity-50"
+              style={{ padding: "6px 16px", fontSize: 12 }}
+              title={
+                !preview?.is_valid
+                  ? "Resolve the validation errors before applying this plan."
+                  : isEngineRunning
+                  ? "Save this plan and restart the running coordinator"
+                  : "Save this plan; it will be used the next time the engine starts"
+              }
             >
-              {applying ? "Restarting..." : "Apply & Restart Coordinator"}
+              {applying
+                ? isEngineRunning
+                  ? "Applying & Restarting…"
+                  : "Applying…"
+                : isEngineRunning
+                ? "Apply & Restart Coordinator"
+                : "Apply & Start Coordinator"}
             </button>
           </div>
         </div>
-
       </div>
     </div>
   );

@@ -1,0 +1,48 @@
+{
+  "timestamp": "2026-10-15T15:06:41.647Z",
+  "features": {
+    "feature1_telemetry": {
+      "passed": true,
+      "actualCpu": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+      "actualGpu": "NVIDIA GeForce GTX 1050, 4096, 3260",
+      "actualRam": "853 MB free / 8032 MB total"
+    },
+    "feature2_worker_lifecycle": {
+      "passed": false,
+      "screenPid": null,
+      "actualWorkerProc": "14516",
+      "actualWorkerListening": true
+    },
+    "feature3_security": {
+      "passed": false,
+      "errorText": "",
+      "revokedHost": "0.0.0.0"
+    },
+    "feature4_devices": {
+      "passed": true
+    },
+    "feature4_onboarding_modal": {
+      "passed": true
+    },
+    "feature5_allocation": {
+      "passed": true
+    },
+    "feature6_settings": {
+      "passed": true
+    },
+    "feature7_inference": {
+      "passed": true,
+      "healthStatus": 200,
+      "responseSnippet": "●—●—●\nSwarm\nQwen 2.5 3B (Instruct · Q4_K_M)\n2,048 ctx\nCluster\nReady\nStop Engine\n1 host + 1 local helper\nChat\nDevices\nWorker\nSession\nSettings\nCPU\n·\nL0–L17\nRPC\n(test helper)\n·\nL18–L36\nGPU\nPlacement is fixed when the session loads. Click segment to inspect.\nChat\nStreaming…\nClear\nYou\nReply with exactly: SWARM FULL VERIFICATION SUCCESS\nSwarm\nSWARM FULL VER\nOptions (256 max tokens)\n0 tokens / 2,048 ctx\n· Shift+Enter for newline\nStop ●—●—●\nSwarm\nQwen 2.5 3B (Instruct · Q4_K_M)\n2,048 ctx\nCluster\nReady\nStop Engine\n1 host + 1 local helper\nChat\nDevices\nWorker\nSession\nSettings\nCPU\n·\nL0–L17\nRPC\n(test helper)\n·\nL18–L36\nGPU\nPlacement is fixed when the session loads. Click segment to inspect.\nChat\nStreaming…\nClear\nYou\nReply with exactly: SWARM FULL VERIFICATION SUCCESS\nSwarm\nSWARM FULL VER\nOptions (256 max tokens)\n0 tokens / 2,048 ctx\n· Shift+Enter for newline\nStop Chat\nDevices\nWorker\nSession\nSettings\nCPU\n·\nL0–L17\nRPC\n(test helper)\n·\nL18–L36\nGPU\nPlacement is fixed when the session loads. Click segment to inspect.\nChat\nStreaming…\nClear\nYou\nReply with exactly: SWARM FULL VERIFICATION SUCCESS\nSwarm\nSWARM FULL VER\nOptions (256 max tokens)\n0 tokens / 2,048 ctx\n· Shift+Enter for newline\nStop CPU\n·\nL0–L17\nRPC\n(test helper)\n·\nL18–L36\nGPU\nPlacement is fixed when the session loads. Click segment to inspect.\nChat\nStreaming…\nClear\nYou\nReply with exactly: SWARM FULL VERIFICATION SUCCESS\nSwarm\nSWARM FULL VER\nOptions (256 max tokens)\n0 tokens / 2,048 ctx\n· Shift+Enter for newline\nStop CPU\n·\nL0–L17\nRPC\n(test helper)\n·\nL18–L36\nGPU\nPlacement is fixed when the session loads. Click segment to inspect.\nChat\nStreaming…\nClear\nYou\nReply with exactly: SWARM FULL VERIFICATION SUCCESS\nSwarm\nSWARM FULL VER\nOptions (256 max tokens)\n0 tokens / 2,048 ctx\n· Shift+Enter for newline\nStop You\nReply with exactly: SWARM FULL VERIFICATION SUCCESS\nSwarm\nSWARM FULL VER You\nReply with exactly: SWARM FULL VERIFICATION SUCCESS Reply with exactly: SWARM FULL VERIFICATION SUCCESS Reply with exactly: SWARM FULL VERIFICATION SUCCESS Swarm\nSWARM FULL VER SWARM FULL VER SWARM FULL VER",
+      "portClean": true
+    },
+    "feature8_cleanup": {
+      "passed": true,
+      "port50052Clean": true,
+      "noOrphanRpc": true,
+      "noOrphanCoord": true
+    }
+  },
+  "discrepancies": [],
+  "passed": true
+}

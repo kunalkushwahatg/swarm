@@ -25,9 +25,16 @@ export function PlacementRibbon({
     return null;
   }
 
-  const effectiveTotal = totalLayers > 0 ? totalLayers : 37;
+  const effectiveTotal = totalLayers > 0 ? totalLayers : segments.reduce((acc, s) => acc + s.layerCount, 0) || 1;
   const sortedSegments = [...segments].sort((a, b) => a.startLayer - b.startLayer);
-  const selectedSegment = sortedSegments.find((s) => s.backendId === selectedBackendId);
+
+  // A processor with zero assigned layers is not part of the model's layer
+  // placement. Showing it as a sliver makes the adjacent range label look as
+  // though the zero-layer processor owns those layers.
+  const populatedSegments = sortedSegments.filter((segment) => segment.layerCount > 0);
+  const renderedSegments =
+    populatedSegments.length > 0 ? populatedSegments : sortedSegments;
+  const selectedSegment = renderedSegments.find((s) => s.backendId === selectedBackendId);
 
   const handleKeyDown = (e: React.KeyboardEvent, seg: RibbonSegment, idx: number) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -35,11 +42,14 @@ export function PlacementRibbon({
       setSelectedBackendId((prev) => (prev === seg.backendId ? null : seg.backendId));
     } else if (e.key === "ArrowRight") {
       e.preventDefault();
-      const next = sortedSegments[(idx + 1) % sortedSegments.length];
+      const next = renderedSegments[(idx + 1) % renderedSegments.length];
       setSelectedBackendId(next.backendId);
     } else if (e.key === "ArrowLeft") {
       e.preventDefault();
-      const prev = sortedSegments[(idx - 1 + sortedSegments.length) % sortedSegments.length];
+      const prev =
+        renderedSegments[
+          (idx - 1 + renderedSegments.length) % renderedSegments.length
+        ];
       setSelectedBackendId(prev.backendId);
     } else if (e.key === "Escape") {
       setSelectedBackendId(null);
@@ -52,6 +62,7 @@ export function PlacementRibbon({
       <div
         role="tablist"
         aria-label="Model layer placement across hardware processors"
+        className="placement-track"
         style={{
           display: "flex",
           gap: 2,
@@ -62,7 +73,7 @@ export function PlacementRibbon({
           opacity: isOffline ? 0.85 : 1,
         }}
       >
-        {sortedSegments.map((seg, idx) => {
+        {renderedSegments.map((seg, idx) => {
           const widthPct = Math.max((seg.layerCount / effectiveTotal) * 100, 3);
           const isSelected = selectedBackendId === seg.backendId;
           const isHovered = hoveredBackendId === seg.backendId;
@@ -95,7 +106,8 @@ export function PlacementRibbon({
               role="tab"
               aria-selected={isSelected}
               aria-expanded={isSelected}
-              aria-label={`${seg.deviceName} (${seg.processor.toUpperCase()}): ${seg.layerCount} layers (${seg.rangeLabel}). Click or press Enter to inspect placement details.`}
+              className="placement-segment"
+              aria-label={`${seg.deviceName} (${seg.processor.toUpperCase()}): ${seg.layerCount} layers (${seg.rangeLabel || `${seg.layerCount} layers`}). Click or press Enter to inspect placement details.`}
               onClick={() => setSelectedBackendId((prev) => (prev === seg.backendId ? null : seg.backendId))}
               onKeyDown={(e) => handleKeyDown(e, seg, idx)}
               onMouseEnter={() => setHoveredBackendId(seg.backendId)}
@@ -119,6 +131,7 @@ export function PlacementRibbon({
               {/* Desktop quick hover tooltip */}
               {isHovered && !selectedSegment && (
                 <div
+                  className="placement-segment-tooltip"
                   style={{
                     position: "absolute",
                     bottom: "calc(100% + 6px)",
@@ -164,12 +177,13 @@ export function PlacementRibbon({
           }}
         >
           <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
-            {sortedSegments.map((seg, idx) => {
+            {renderedSegments.map((seg, idx) => {
               const isSelected = selectedBackendId === seg.backendId;
               return (
                 <button
                   key={seg.backendId}
                   type="button"
+                  className="placement-caption-chip"
                   onClick={() => setSelectedBackendId((prev) => (prev === seg.backendId ? null : seg.backendId))}
                   style={{
                     display: "inline-flex",
@@ -186,11 +200,11 @@ export function PlacementRibbon({
                   title="Click to view processor buffer allocations"
                 >
                   <span style={{ fontWeight: isSelected ? 700 : 500, color: isSelected ? "var(--color-accent)" : "var(--color-text)" }}>
-                    {seg.rangeLabel}
+                    {seg.rangeLabel || `${seg.layerCount} layers`}
                   </span>
                   <span>{seg.processor.toUpperCase()}</span>
                   {seg.isLoopback && <span className="k">(test helper)</span>}
-                  {idx < segments.length - 1 && <span style={{ color: "var(--color-rule-strong)", textDecoration: "none" }}>·</span>}
+                  {idx < renderedSegments.length - 1 && <span style={{ color: "var(--color-rule-strong)", textDecoration: "none" }}>·</span>}
                 </button>
               );
             })}
@@ -208,7 +222,7 @@ export function PlacementRibbon({
               ? "Last known placement — status unverified while offline"
               : selectedSegment
               ? "Click segment again or ✕ to close drill-down"
-              : "Placement is fixed when the session loads. Click segment to inspect."}
+              : "Click segment to inspect layer assignment."}
           </span>
         </div>
       )}
@@ -296,7 +310,7 @@ export function PlacementRibbon({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
               gap: 8,
               fontSize: 12,
               background: "var(--color-bg)",
@@ -338,7 +352,7 @@ export function PlacementRibbon({
 
             <div>
               <span style={{ color: "var(--color-text-3)", fontSize: 11, display: "block" }}>Memory Scope</span>
-              <span className="mono" style={{ color: "var(--color-text-2)" }}>
+              <span className="mono" style={{ color: "var(--color-text-2)", wordBreak: "break-all", fontSize: 11.5 }} title={selectedSegment.memoryScope}>
                 {selectedSegment.memoryScope || (selectedSegment.processor === "gpu" ? "device_vram" : "shared_host")}
               </span>
             </div>

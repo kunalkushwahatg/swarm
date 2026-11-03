@@ -1,0 +1,9 @@
+UI Field,Authoritative Source,Raw Value,Transformation,Displayed Value,Status
+"Remote Worker Status","Win32 TCP socket probe (port 50052)","TcpTestSucceeded: true, latency: 174ms","StatusBadge green REACHABLE","Reachable (174 ms)","PASS"
+"Remote Device Free RAM","RPC ggml_backend_dev_memory","free_mem: 4056088576, total_mem: 16539545600","Bytes / 1024^3 to GiB","3.83 GiB free / 15.40 GiB total","PASS"
+"Physical Host RAM","GlobalMemoryStatusEx Win32 API","Total: 8422543360, Avail: 297148416","Bytes / 1024^2 to MB","8032 MB total / 283 MB free","PASS"
+"Active Loaded Model","Coordinator /health endpoint -> model.path","C:\Users\kunal\OneDrive\Desktop\swarm\models\qwen2.5-3b-instruct-q4_k_m.official-check.gguf","Filename extraction & tag lookup","Qwen 2.5 3B (Instruct · Q4_K_M)","PASS"
+"Model Architecture Context Length","GGUF metadata -> qwen2.context_length","32768","Formatted with comma","32,768 ctx","PASS"
+"Applied Runtime Context Size","Coordinator /health endpoint -> context.size","2048","Raw integer tokens","2048 ctx (runtime)","PASS"
+"Remote Tensor Allocation Placement","Coordinator /backends endpoint -> RPC0","assigned_layers: 19..27, model_buffer_bytes: 408116265","Layer range & byte formatting","RPC0 (192.168.137.202:50052): Layers 19-27, 408.1 MB","PASS"
+"Local CUDA Tensor Placement","Coordinator /backends endpoint -> CUDA0","assigned_layers: 28..36, model_buffer_bytes: 637974610","Layer range & byte formatting","CUDA0 (GTX 1050): Layers 28-36, 638.0 MB","PASS"

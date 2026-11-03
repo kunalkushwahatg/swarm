@@ -57,23 +57,50 @@ export function shortModelName(path: string): string {
   if (!path) return "—";
   const filename = shortModelPath(path).toLowerCase();
 
-  if (filename.includes("qwen2.5-3b")) return "Qwen 2.5 3B";
-  if (filename.includes("qwen2.5-0.5b")) return "Qwen 2.5 0.5B";
-  if (filename.includes("qwen2.5-1.5b")) return "Qwen 2.5 1.5B";
-  if (filename.includes("qwen2.5-7b")) return "Qwen 2.5 7B";
-  if (filename.includes("qwen2.5-14b")) return "Qwen 2.5 14B";
+  if (filename.includes("qwen2.5-3b") || filename.includes("qwen 2.5 3b")) return "Qwen 2.5 3B";
+  if (filename.includes("qwen2.5-0.5b") || filename.includes("qwen 2.5 0.5b")) return "Qwen 2.5 0.5B";
+  if (filename.includes("qwen2.5-1.5b") || filename.includes("qwen 2.5 1.5b")) return "Qwen 2.5 1.5B";
+  if (filename.includes("qwen2.5-7b") || filename.includes("qwen 2.5 7b")) return "Qwen 2.5 7B";
+  if (filename.includes("qwen2.5-14b") || filename.includes("qwen 2.5 14b")) return "Qwen 2.5 14B";
+  if (filename.includes("smollm2-135m") || filename.includes("smollm2 135m")) return "SmolLM2 135M";
+  if (filename.includes("smollm2-360m") || filename.includes("smollm2 360m")) return "SmolLM2 360M";
+  if (filename.includes("smollm2-1.7b") || filename.includes("smollm2 1.7b")) return "SmolLM2 1.7B";
+  if (filename.includes("llama-3.2-1b") || filename.includes("llama 3.2 1b")) return "Llama 3.2 1B";
+  if (filename.includes("llama-3.2-3b") || filename.includes("llama 3.2 3b")) return "Llama 3.2 3B";
   if (filename.includes("llama-3-8b") || filename.includes("llama-3.1-8b")) return "Llama 3.1 8B";
+  if (filename.includes("phi-3.5-mini") || filename.includes("phi 3.5 mini")) return "Phi-3.5 Mini";
   if (filename.includes("mistral-7b")) return "Mistral 7B";
 
   // Generic extraction: model-name-sizeb
-  const match = filename.match(/^([a-z0-9]+)(?:[-_]([0-9]+(?:\.[0-9]+)?b))?/i);
+  const match = filename.match(/^([a-z0-9]+)(?:[-_ ]([0-9]+(?:\.[0-9]+)?[mb]))?/i);
   if (match && match[1]) {
     const name = match[1].charAt(0).toUpperCase() + match[1].slice(1);
     const size = match[2] ? ` ${match[2].toUpperCase()}` : "";
     return `${name}${size}`;
   }
 
-  const raw = shortModelPath(path).replace(/\.gguf$/i, "");
-  return raw.length > 16 ? `${raw.slice(0, 14)}…` : raw;
+  const raw = shortModelPath(path).replace(/\.gguf$/i, "").replace(/[-_]/g, " ");
+  return raw.length > 20 ? `${raw.slice(0, 18)}…` : raw;
+}
+
+/** Formats a clean, professional model title with instruction/quantization details */
+export function friendlyModelTitle(path: string): string {
+  if (!path) return "No Model Selected";
+  const filename = shortModelPath(path);
+  const lower = filename.toLowerCase();
+
+  const name = shortModelName(path);
+  const tags: string[] = [];
+
+  if (lower.includes("instruct")) tags.push("Instruct");
+  if (lower.includes("q4_k_m")) tags.push("Q4_K_M");
+  else if (lower.includes("q4_0")) tags.push("Q4_0");
+  else if (lower.includes("q8_0")) tags.push("Q8_0");
+  else if (lower.includes("f16")) tags.push("F16");
+
+  if (tags.length > 0) {
+    return `${name} (${tags.join(" · ")})`;
+  }
+  return name;
 }
 

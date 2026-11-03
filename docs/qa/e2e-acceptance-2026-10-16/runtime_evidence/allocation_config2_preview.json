@@ -1,0 +1,99 @@
+{
+  "mode": "manual",
+  "is_valid": true,
+  "validation_errors": [],
+  "validation_warnings": [],
+  "risk_level": "SAFE",
+  "risk_explanation": "Plan provides conservative headroom (>1,024 MB RAM) and valid device capacities across all participating computers.",
+  "model_total_layers": 37,
+  "total_offload_layers": 20,
+  "total_model_layers": 37,
+  "planned_offload_layers": 20,
+  "total_cluster_capacity_layers": 20,
+  "estimated_bytes_per_layer": 97596929,
+  "assumptions_explanation": "ASSUMPTIONS: Model Qwen 2.5 3B (37 layers total: 36 transformer blocks + 1 output layer). Cost per layer at n_ctx=2048: ~94 MiB (73 MiB weights [Q4_K_M] + ~16 MiB KV cache + ~2 MiB compute buffer). Headroom reserved: 1024 MB RAM, 256 MB VRAM. INACCURACY CONDITIONS: 1) Non-Q4 quantizations (Q8_0 adds ~42 MiB/layer; FP16 adds ~102 MiB/layer); 2) Extended context lengths (KV cache expands to 64 MiB/layer at 8k ctx, 256 MiB/layer at 32k ctx); 3) Multi-sequence concurrent batches; 4) CUDA runtime driver overhead (~250-500 MB VRAM) and DWM display composition; 5) RPC network socket non-paged pool memory. CONTROL ENFORCEMENT: Device memory budgets (SWARM_WORKER_PROFILES) are advisory targets used to calculate proportional tensor splits (model_params.tensor_split), NOT hard OS memory caps. The only genuinely hard-enforced control is endpoint exclusion from SWARM_RPC_ENDPOINTS.",
+  "device_plans": [
+    {
+      "device_id": "local-cuda-0",
+      "device_name": "Host NVIDIA CUDA GPU",
+      "backend_type": "cuda",
+      "is_loopback": false,
+      "enabled": true,
+      "measured_total_mb": 4096,
+      "measured_free_mb": 2018,
+      "reserved_headroom_mb": 256,
+      "usable_budget_mb": 1762,
+      "planned_budget_mb": 1536,
+      "estimated_layer_capacity": 14,
+      "planned_layer_count": 14,
+      "planned_layer_ranges": [
+        [
+          0,
+          13
+        ]
+      ],
+      "split_weight": 0.7,
+      "provenance": "MEASURED",
+      "control_enforcement": "TARGET_SPLIT (Manual budget-derived proportional tensor split; not an OS memory cap)",
+      "warning": null,
+      "split_weight_percent": 70,
+      "memory_budget_mb": 1536,
+      "control_type": "TARGET_SPLIT (Manual budget-derived proportional tensor split; not an OS memory cap)",
+      "warnings": []
+    },
+    {
+      "device_id": "127.0.0.1:50052",
+      "device_name": "Host Loopback RPC Worker",
+      "backend_type": "rpc",
+      "is_loopback": true,
+      "enabled": false,
+      "measured_total_mb": 8032,
+      "measured_free_mb": 151,
+      "reserved_headroom_mb": 1024,
+      "usable_budget_mb": 0,
+      "planned_budget_mb": 1024,
+      "estimated_layer_capacity": 0,
+      "planned_layer_count": 0,
+      "planned_layer_ranges": [],
+      "split_weight": 0,
+      "provenance": "MEASURED",
+      "control_enforcement": "HARD_ENFORCED (Excluded from RPC endpoints)",
+      "warning": null,
+      "split_weight_percent": 0,
+      "memory_budget_mb": 1024,
+      "control_type": "HARD_ENFORCED (Excluded from RPC endpoints)",
+      "warnings": []
+    },
+    {
+      "device_id": "192.168.137.202:50052",
+      "device_name": "Snehil",
+      "backend_type": "rpc",
+      "is_loopback": false,
+      "enabled": true,
+      "measured_total_mb": null,
+      "measured_free_mb": null,
+      "reserved_headroom_mb": 1024,
+      "usable_budget_mb": 3072,
+      "planned_budget_mb": 768,
+      "estimated_layer_capacity": 6,
+      "planned_layer_count": 6,
+      "planned_layer_ranges": [
+        [
+          14,
+          19
+        ]
+      ],
+      "split_weight": 0.3,
+      "provenance": "UNKNOWN",
+      "control_enforcement": "TARGET_SPLIT (Manual budget-derived proportional tensor split; not an OS memory cap)",
+      "warning": null,
+      "split_weight_percent": 30,
+      "memory_budget_mb": 768,
+      "control_type": "TARGET_SPLIT (Manual budget-derived proportional tensor split; not an OS memory cap)",
+      "warnings": []
+    }
+  ],
+  "worker_profiles_env": "local-cuda-0=1536MB,192.168.137.202:50052=768MB",
+  "placement_policy_env": "resource_aware",
+  "rpc_endpoints_env": "192.168.137.202:50052"
+}

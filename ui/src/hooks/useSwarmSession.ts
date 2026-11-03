@@ -1,4 +1,10 @@
-import { useMemo } from "react";
+import {
+  createContext,
+  createElement,
+  useContext,
+  useMemo,
+  type ReactNode,
+} from "react";
 import { useHealth, useBackends, useNodes, useLatestInference, type ValidatedTimings } from "./useSwarm";
 import type { BackendPlacement, WorkerInfo } from "../types/api";
 
@@ -138,7 +144,9 @@ export interface SwarmSession {
 
 const DEFAULT_RESERVE_RAM = 1024 * 1024 * 1024; // 1.0 GB default reserve
 
-export function useSwarmSession(pollIntervalMs = 3000): SwarmSession {
+const SwarmSessionContext = createContext<SwarmSession | null>(null);
+
+function useSwarmSessionState(pollIntervalMs: number): SwarmSession {
   const {
     data: health,
     lastKnownData: lastKnownHealth,
@@ -193,15 +201,26 @@ export function useSwarmSession(pollIntervalMs = 3000): SwarmSession {
 
     // 2. Model & Context Properties
     const effectiveHealthOrLast = effectiveHealth || lastKnownHealth;
-    const modelPath = effectiveHealthOrLast?.model?.path || "qwen2.5-3b-instruct-q4_k_m.official-check.gguf";
+    const storedModelPath = typeof window !== "undefined" ? localStorage.getItem("swarm_active_model_path") : null;
+    const storedModelName = typeof window !== "undefined" ? localStorage.getItem("swarm_active_model_name") : null;
+    const storedModelCtx = typeof window !== "undefined" ? localStorage.getItem("swarm_active_model_ctx") : null;
+
+    const modelPath = isReady
+      ? (effectiveHealth?.model?.path || storedModelPath || "")
+      : (storedModelPath || effectiveHealthOrLast?.model?.path || "");
     const modelParts = modelPath.split(/[\\/]/);
-    const modelName = modelParts[modelParts.length - 1] || "Qwen 2.5 3B";
-    const contextWindow = effectiveHealthOrLast?.context?.size || 2048;
+    const modelName = isReady
+      ? (effectiveHealth?.model?.path ? (modelParts[modelParts.length - 1] || "Unknown model") : (storedModelName || "Unknown model"))
+      : (storedModelName || modelParts[modelParts.length - 1] || "No model loaded");
+    const storedCtxNumber = storedModelCtx ? Number(storedModelCtx) : undefined;
+    const contextWindow = isReady
+      ? (effectiveHealth?.context?.size || storedCtxNumber || 0)
+      : (storedCtxNumber || effectiveHealthOrLast?.context?.size || 0);
 
     // 3. Authoritative Placement Ribbon Segments
     const backends: BackendPlacement[] = backendsData?.backends ?? [];
     const calculatedTotal = backends.reduce((sum, b) => sum + (b.assigned_layers ? b.assigned_layers.length : 0), 0);
-    const totalLayers = calculatedTotal > 0 ? calculatedTotal : 37;
+    const totalLayers = calculatedTotal;
     const allWorkers: WorkerInfo[] = (effectiveHealth?.workers ?? lastKnownHealth?.workers) || [];
 
     const ribbonSegments: RibbonSegment[] = backends.map((b) => {
@@ -288,14 +307,17 @@ export function useSwarmSession(pollIntervalMs = 3000): SwarmSession {
     ribbonSegments.sort((a, b) => a.startLayer - b.startLayer);
 
     // 4. Memory Accounting (Deduplicated Host RAM)
-    const hostRamTotal = backendsData?.memory_accounting?.host_ram_total_bytes || 8422543360;
-    const hostRamAvail = backendsData?.memory_accounting?.host_ram_available_bytes || 790769664;
-    const isBelowReserve = hostRamAvail < DEFAULT_RESERVE_RAM;
+    const hostRamTotal = backendsData?.memory_accounting?.host_ram_total_bytes ?? 0;
+    const hostRamAvail = backendsData?.memory_accounting?.host_ram_available_bytes ?? 0;
+    const hasHostRamTelemetry = hostRamAvail > 0;
+    const isBelowReserve = hasHostRamTelemetry && hostRamAvail < DEFAULT_RESERVE_RAM;
     const availGb = (hostRamAvail / 1024 / 1024 / 1024).toFixed(2);
     const reserveGb = (DEFAULT_RESERVE_RAM / 1024 / 1024 / 1024).toFixed(1);
-    const reserveWarningText = isBelowReserve
-      ? `RAM Headroom: ${availGb} GB free now (reserve: ${reserveGb} GB). Inference remains active; memory is constrained.`
-      : `RAM Headroom: ${availGb} GB free now (${reserveGb} GB kept in reserve).`;
+    const reserveWarningText = !hasHostRamTelemetry
+      ? "RAM headroom unavailable: the coordinator has not reported host memory telemetry."
+      : isBelowReserve
+        ? `RAM Headroom: ${availGb} GB free now (reserve: ${reserveGb} GB). Inference remains active; memory is constrained.`
+        : `RAM Headroom: ${availGb} GB free now (${reserveGb} GB kept in reserve).`;
 
     // 5. Structure Physical Devices
     // Primary Physical Host (This computer)
@@ -324,27 +346,35 @@ export function useSwarmSession(pollIntervalMs = 3000): SwarmSession {
     }
 
     const hostGpuPlacement = backends.find((b) => b.backend_type === "local_cuda");
+    const hostVramTotal = hostGpuPlacement?.memory_total_bytes;
+    const hostVramFree = hostGpuPlacement?.memory_free_bytes;
+    const hostConnection = effectiveHealth?.server?.host
+      ? `${effectiveHealth.server.host}:${effectiveHealth.server.port} (Local Coordinator)`
+      : "Coordinator unavailable";
     const hostDevice: SwarmDevice = {
       id: "device-host-local",
       name: "This computer",
       role: "host",
       isLocalHost: true,
       isLoopback: false,
-      status: isReady ? "ready" : "reachable",
-      statusLabel: isReady ? "Ready" : "Connected",
+      status: isReady ? "ready" : effectiveHealth ? "reachable" : "offline",
+      statusLabel: isReady ? "Ready" : effectiveHealth ? "Connected" : "Offline",
       assignedLayersCount: hostLayers,
       totalModelLayers: totalLayers,
-      sharePercent: Math.round((hostLayers / totalLayers) * 100),
+      sharePercent: totalLayers > 0 ? Math.round((hostLayers / totalLayers) * 100) : 0,
       ramTotalBytes: hostRamTotal,
       ramFreeBytes: hostRamAvail,
-      vramTotalBytes: hostGpuPlacement?.memory_total_bytes || 4294836224,
-      vramFreeBytes: hostGpuPlacement?.memory_free_bytes || 3526780519,
-      vramUsedBytes: (hostGpuPlacement?.memory_total_bytes || 4294836224) - (hostGpuPlacement?.memory_free_bytes || 3526780519),
+      vramTotalBytes: hostVramTotal,
+      vramFreeBytes: hostVramFree,
+      vramUsedBytes:
+        hostVramTotal != null && hostVramFree != null
+          ? hostVramTotal - hostVramFree
+          : undefined,
       reserveBytes: DEFAULT_RESERVE_RAM,
       isBelowReserve,
       processors: hostProcessors,
-      connectionAddress: "127.0.0.1:8080 (Local Coordinator)",
-      provenance: "Measured",
+      connectionAddress: hostConnection,
+      provenance: hostRamTotal > 0 ? "Measured" : "Unavailable",
     };
 
     // Helper Devices (Loopback Test Helper and Remote Network Helpers)
@@ -452,7 +482,7 @@ export function useSwarmSession(pollIntervalMs = 3000): SwarmSession {
         statusLabel: helperStatusLabel,
         assignedLayersCount: layersCount,
         totalModelLayers: totalLayers,
-        sharePercent: Math.round((layersCount / totalLayers) * 100),
+        sharePercent: totalLayers > 0 ? Math.round((layersCount / totalLayers) * 100) : 0,
         ramTotalBytes: isLoopback
           ? hostRamTotal
           : (nodeMatch?.ram_total_bytes?.value ?? nodeMatch?.ram_total?.value ?? w.memory_total_bytes ?? 0),
@@ -537,8 +567,8 @@ export function useSwarmSession(pollIntervalMs = 3000): SwarmSession {
       lastHealthyTime,
       offlineSince,
       lastKnownModelName: effectiveHealthOrLast?.model?.path
-        ? effectiveHealthOrLast.model.path.replace(/\\/g, "/").split("/").pop() || "qwen2.5-3b-instruct-q4_k_m"
-        : "qwen2.5-3b-instruct-q4_k_m",
+        ? effectiveHealthOrLast.model.path.replace(/\\/g, "/").split("/").pop() || "Unknown model"
+        : "No model loaded",
       lastKnownModelPath: effectiveHealthOrLast?.model?.path || "",
       lastKnownLayers: totalLayers,
       retryNow: refetchHealth,
@@ -589,5 +619,24 @@ export function useSwarmSession(pollIntervalMs = 3000): SwarmSession {
     latestInference,
   ]);
 
+  return session;
+}
+
+export function SwarmSessionProvider({
+  children,
+  pollIntervalMs = 3000,
+}: {
+  children: ReactNode;
+  pollIntervalMs?: number;
+}) {
+  const session = useSwarmSessionState(pollIntervalMs);
+  return createElement(SwarmSessionContext.Provider, { value: session }, children);
+}
+
+export function useSwarmSession(_pollIntervalMs = 3000): SwarmSession {
+  const session = useContext(SwarmSessionContext);
+  if (!session) {
+    throw new Error("useSwarmSession must be used inside a SwarmSessionProvider.");
+  }
   return session;
 }

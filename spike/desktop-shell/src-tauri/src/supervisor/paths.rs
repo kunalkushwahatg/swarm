@@ -17,12 +17,33 @@ pub struct RemoteWorkerConfig {
     pub port: u16,
     pub added_at_ms: u64,
     pub is_active: bool,
+    #[serde(default = "default_worker_transport")]
+    pub transport: String,
+    #[serde(default)]
+    pub endpoint_id: Option<String>,
+    #[serde(default)]
+    pub direct_addr: Option<String>,
+    /// Six-digit code shared out-of-band. Both ends hash it into the same
+    /// Iroh identity so the desktop can dial a phone behind carrier NAT.
+    #[serde(default)]
+    pub pairing_code: Option<String>,
+    #[serde(default)]
+    pub relay_url: Option<String>,
+    /// Loopback port served by the desktop's local tunnel dialer. When set,
+    /// the coordinator connects here instead of the phone's unreachable LAN IP.
+    #[serde(default)]
+    pub tunnel_local_port: Option<u16>,
+}
+
+fn default_worker_transport() -> String {
+    "tcp".to_string()
 }
 
 #[derive(Debug, Clone)]
 pub struct RuntimePaths {
     pub coord_executable: PathBuf,
     pub rpc_executable: PathBuf,
+    pub tunnel_executable: Option<PathBuf>,
     pub coord_extra_dll_dirs: Vec<PathBuf>,
     pub rpc_extra_dll_dirs: Vec<PathBuf>,
     pub is_installed_package: bool,
@@ -42,6 +63,27 @@ pub fn resolve_model_file(workspace_root: &Path) -> Result<PathBuf, String> {
         let p = PathBuf::from(env_path.trim());
         if p.exists() && p.is_file() {
             return Ok(p);
+        }
+    }
+
+    // 1b. Persistent library selection
+    let lib_cfg_candidates = [
+        std::env::var("LOCALAPPDATA").ok().map(|p| PathBuf::from(p).join(r"Swarm\config\model_library.json")),
+        std::env::var("ProgramData").ok().map(|p| PathBuf::from(p).join(r"Swarm\config\model_library.json")),
+        Some(workspace_root.join(r"dist\model_library.json")),
+    ];
+    for cand in lib_cfg_candidates.into_iter().flatten() {
+        if cand.exists() {
+            if let Ok(content) = std::fs::read_to_string(&cand) {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(sel) = json.get("selected_model_path").and_then(|v| v.as_str()) {
+                        let p = PathBuf::from(sel);
+                        if p.exists() && p.is_file() {
+                            return Ok(p);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -162,6 +204,33 @@ pub fn resolve_native_runtime(workspace_root: &Path) -> Result<RuntimePaths, Str
         None => workspace_root.join(r"dist\swarm-worker-windows-x64\ggml-rpc-server.exe"),
     };
 
+    // Tunnel binary resolution
+    let installed_tunnel_candidates = match exe_dir {
+        Some(dir) => vec![
+            dir.join(r"bin\swarm-tunnel.exe"),
+            dir.join(r"resources\bin\swarm-tunnel.exe"),
+            dir.join("swarm-tunnel.exe"),
+        ],
+        None => vec![],
+    };
+
+    let mut found_tunnel = None;
+    for cand in installed_tunnel_candidates {
+        if cand.exists() && cand.is_file() {
+            found_tunnel = Some(cand);
+            break;
+        }
+    }
+
+    let tunnel_executable = found_tunnel.or_else(|| {
+        let dev_tunnel = workspace_root.join(r"spike\swarm-tunnel\target\release\swarm-tunnel.exe");
+        if dev_tunnel.exists() && dev_tunnel.is_file() {
+            Some(dev_tunnel)
+        } else {
+            None
+        }
+    });
+
     let model_path = resolve_model_file(workspace_root).unwrap_or_else(|_| {
         // Fallback default path for display/preflight reporting if not yet created
         workspace_root.join(r"models\qwen2.5-3b-instruct-q4_k_m.official-check.gguf")
@@ -170,6 +239,7 @@ pub fn resolve_native_runtime(workspace_root: &Path) -> Result<RuntimePaths, Str
     Ok(RuntimePaths {
         coord_executable,
         rpc_executable,
+        tunnel_executable,
         coord_extra_dll_dirs: found_dll_dirs.clone(),
         rpc_extra_dll_dirs: found_dll_dirs,
         is_installed_package: is_installed,
@@ -269,20 +339,68 @@ pub fn resolve_remote_workers_file(workspace_root: &Path) -> PathBuf {
 /// Loads registered remote workers from configuration.
 pub fn load_remote_workers(workspace_root: &Path) -> Vec<RemoteWorkerConfig> {
     let p = resolve_remote_workers_file(workspace_root);
+
     if let Ok(content) = std::fs::read_to_string(&p) {
         if let Ok(workers) = serde_json::from_str::<Vec<RemoteWorkerConfig>>(&content) {
             return workers;
         }
     }
+
+    // Recover from the backup if the primary file was truncated or a
+    // replacement failed between remove and rename.
+    let backup_path = p.with_extension("backup.json");
+    if let Ok(content) = std::fs::read_to_string(&backup_path) {
+        if let Ok(workers) = serde_json::from_str::<Vec<RemoteWorkerConfig>>(&content) {
+            eprintln!(
+                "[RemoteWorkers] Recovered {} worker record(s) from {}",
+                workers.len(),
+                backup_path.display()
+            );
+            return workers;
+        }
+    }
+
     Vec::new()
 }
 
 /// Persists registered remote workers to configuration.
+///
+/// Writes to a temporary file and renames it into place so a crash or power
+/// loss cannot leave a half-written `remote_workers.json` that fails to parse
+/// and silently discards every registered worker.
 pub fn save_remote_workers(workspace_root: &Path, workers: &[RemoteWorkerConfig]) -> Result<(), String> {
+    use std::io::Write;
+
     let p = resolve_remote_workers_file(workspace_root);
     if let Some(parent) = p.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
+
     let json_str = serde_json::to_string_pretty(workers).map_err(|e| e.to_string())?;
-    std::fs::write(&p, json_str).map_err(|e| format!("Failed to write {}: {}", p.display(), e))
+    let tmp_path = p.with_extension("json.tmp");
+
+    let write_result = (|| -> Result<(), String> {
+        let mut file = std::fs::File::create(&tmp_path)
+            .map_err(|e| format!("Failed to create {}: {}", tmp_path.display(), e))?;
+        file.write_all(json_str.as_bytes())
+            .map_err(|e| format!("Failed to write {}: {}", tmp_path.display(), e))?;
+        file.sync_all()
+            .map_err(|e| format!("Failed to flush {}: {}", tmp_path.display(), e))?;
+        drop(file);
+
+        if p.exists() {
+            let backup_path = p.with_extension("backup.json");
+            let _ = std::fs::copy(&p, &backup_path);
+            std::fs::remove_file(&p)
+                .map_err(|e| format!("Failed to replace {}: {}", p.display(), e))?;
+        }
+
+        std::fs::rename(&tmp_path, &p)
+            .map_err(|e| format!("Failed to install {}: {}", p.display(), e))
+    })();
+
+    if write_result.is_err() {
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+    write_result
 }

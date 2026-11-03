@@ -233,52 +233,12 @@ export function useMetrics(intervalMs = 4000) {
 }
 
 // ── timing telemetry & validation ───────────────────────────────
-export interface ValidatedTimings {
-  tokens_generated: number;
-  tokens_per_sec?: number;
-  prompt_eval_ms?: number;
-  gen_ms?: number;
-  total_ms?: number;
-  ttfc_ms?: number;
-  completed_at: number;
-}
-
-export function isValidTimingNumber(val: unknown): val is number {
-  return typeof val === "number" && Number.isFinite(val) && val >= 0;
-}
-
-export function validateTimings(raw: unknown, ttfcMs?: number): ValidatedTimings | null {
-  if (!raw || typeof raw !== "object") return null;
-  const t = raw as Record<string, unknown>;
-
-  if (!isValidTimingNumber(t.tokens_generated)) {
-    return null;
-  }
-
-  const tokensGenerated = Math.floor(t.tokens_generated);
-  const promptEvalMs = isValidTimingNumber(t.prompt_eval_ms) ? t.prompt_eval_ms : undefined;
-  const genMs = isValidTimingNumber(t.gen_ms) ? t.gen_ms : undefined;
-  const totalMs = isValidTimingNumber(t.total_ms) ? t.total_ms : undefined;
-
-  let tokensPerSec: number | undefined = undefined;
-  if (tokensGenerated === 0) {
-    tokensPerSec = undefined;
-  } else if (isValidTimingNumber(t.tokens_per_sec) && t.tokens_per_sec > 0) {
-    tokensPerSec = t.tokens_per_sec;
-  }
-
-  const validTtfc = isValidTimingNumber(ttfcMs) ? ttfcMs : undefined;
-
-  return {
-    tokens_generated: tokensGenerated,
-    tokens_per_sec: tokensPerSec,
-    prompt_eval_ms: promptEvalMs,
-    gen_ms: genMs,
-    total_ms: totalMs,
-    ttfc_ms: validTtfc,
-    completed_at: Date.now(),
-  };
-}
+import {
+  validateTimings,
+  isValidTimingNumber,
+  type ValidatedTimings,
+} from "../lib/timings";
+export { validateTimings, isValidTimingNumber, type ValidatedTimings };
 
 const LATEST_INFERENCE_KEY = "swarm_latest_inference";
 
@@ -573,6 +533,38 @@ export function useChat() {
                   streaming: false,
                   timingsUnavailable: true,
                   phase: "completed",
+                }
+              : m,
+          ),
+        );
+      }
+    } catch (e) {
+      // api.chat can reject before the onError callback runs (network
+      // failure, aborted fetch, non-streaming HTTP error). Mark the pending
+      // assistant entry as failed instead of leaving it in a streaming state.
+      if ((e as Error).name === "AbortError") {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  streaming: false,
+                  interrupted: true,
+                  phase: "interrupted",
+                }
+              : m,
+          ),
+        );
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  error: (e as Error).message || String(e),
+                  streaming: false,
+                  phase: "error",
+                  interrupted: m.content.trim().length > 0,
                 }
               : m,
           ),

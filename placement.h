@@ -186,7 +186,7 @@ public:
     // Synchronize placement info back into WorkerManager
     void sync_to_workers(WorkerManager& wm) {
         std::lock_guard<std::mutex> lock(mutex_);
-        for (auto& worker : wm.get_workers()) {
+        for (const auto& worker : wm.get_workers()) {
             std::string worker_endpoint = worker.host + ":" + std::to_string(worker.port);
             BackendPlacement* matched = nullptr;
 
@@ -207,24 +207,28 @@ public:
             }
 
             if (matched) {
-                worker.device_name = matched->device_name;
-                worker.backend_id = matched->backend_id;
-                worker.backend_type = matched->backend_type;
-                worker.is_loopback = matched->is_loopback;
-                worker.memory_scope = matched->memory_scope;
-                worker.assigned_layers = matched->assigned_layers;
-                worker.assigned_layer_ranges = matched->assigned_layer_ranges;
-                worker.model_buffer_bytes = matched->model_buffer_bytes;
-                worker.kv_buffer_bytes = matched->kv_buffer_bytes;
-                worker.compute_buffer_bytes = matched->compute_buffer_bytes;
-                worker.measurement_status = matched->measurement_status;
-                worker.log_derived = matched->log_derived;
-                if (matched->memory_total_bytes > 0) {
-                    worker.memory_total_bytes = matched->memory_total_bytes;
-                }
-                if (matched->memory_free_bytes > 0) {
-                    worker.memory_free_bytes = matched->memory_free_bytes;
-                }
+                // Apply only the placement fields under the registry lock; the
+                // snapshot above is never written back wholesale.
+                wm.update_worker(worker.id, [&](WorkerInfo& target) {
+                    target.device_name = matched->device_name;
+                    target.backend_id = matched->backend_id;
+                    target.backend_type = matched->backend_type;
+                    target.is_loopback = matched->is_loopback;
+                    target.memory_scope = matched->memory_scope;
+                    target.assigned_layers = matched->assigned_layers;
+                    target.assigned_layer_ranges = matched->assigned_layer_ranges;
+                    target.model_buffer_bytes = matched->model_buffer_bytes;
+                    target.kv_buffer_bytes = matched->kv_buffer_bytes;
+                    target.compute_buffer_bytes = matched->compute_buffer_bytes;
+                    target.measurement_status = matched->measurement_status;
+                    target.log_derived = matched->log_derived;
+                    if (matched->memory_total_bytes > 0) {
+                        target.memory_total_bytes = matched->memory_total_bytes;
+                    }
+                    if (matched->memory_free_bytes > 0) {
+                        target.memory_free_bytes = matched->memory_free_bytes;
+                    }
+                });
             }
         }
     }

@@ -34,6 +34,8 @@ pub struct ClusterStatus {
     pub rpc_port: u16,
     pub coordinator_port: u16,
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub active_profile: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +65,7 @@ struct OrchestratorInner {
     rpc_port: u16,
     coordinator_port: u16,
     last_error: Option<String>,
+    active_profile: Option<String>,
 }
 
 pub struct Orchestrator {
@@ -82,9 +85,16 @@ impl Orchestrator {
                 rpc_port: 0,
                 coordinator_port: 0,
                 last_error: None,
+                active_profile: None,
             })),
             cancel_flag: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Sets the active launch profile identifier (e.g. "default" or "low_memory_cuda_standalone").
+    pub fn set_active_profile(&self, profile: Option<String>) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.active_profile = profile;
     }
 
     /// Requests cancellation of any in-flight startup sequence.
@@ -98,8 +108,72 @@ impl Orchestrator {
         self.cancel_flag.load(Ordering::SeqCst)
     }
 
+    /// Detects children that died after the cluster reached Ready and moves the
+    /// state to Error, so a crashed cluster no longer reports Ready forever.
+    fn refresh_liveness(&self) {
+        let (state, rpc_pid, coord_pid) = {
+            let inner = self.inner.lock().unwrap();
+            (inner.state.clone(), inner.rpc_pid, inner.coordinator_pid)
+        };
+        if state != ClusterLifecycleState::Ready {
+            return;
+        }
+
+        let failure = {
+            let mut map = self.manager.managed_children.lock().unwrap();
+            let mut failure = None;
+            for (pid_opt, label) in [(coord_pid, "Coordinator"), (rpc_pid, "RPC worker")] {
+                let Some(pid) = pid_opt else { continue };
+                failure = match map.get_mut(&pid).map(|child| child.refresh_status()) {
+                    Some(ProcessStatus::Running) => None,
+                    Some(ProcessStatus::Exited { exit_code }) => {
+                        Some(format!("{} PID {} exited with code {}", label, pid, exit_code))
+                    }
+                    Some(ProcessStatus::Terminated) => {
+                        Some(format!("{} PID {} was terminated", label, pid))
+                    }
+                    Some(ProcessStatus::Failed { reason }) => {
+                        Some(format!("{} PID {} failed: {}", label, pid, reason))
+                    }
+                    None => Some(format!("{} PID {} is no longer tracked", label, pid)),
+                };
+                if failure.is_some() {
+                    break;
+                }
+            }
+            failure
+        };
+
+        let Some(reason) = failure else { return };
+
+        let (rpc_pid, coord_pid) = {
+            let mut inner = self.inner.lock().unwrap();
+            if inner.state == ClusterLifecycleState::Ready {
+                log::error!("[Orchestrator] {}", reason);
+                inner.state = ClusterLifecycleState::Error { reason: reason.clone() };
+                inner.last_error = Some(reason);
+                let pids = (inner.rpc_pid, inner.coordinator_pid);
+                inner.rpc_pid = None;
+                inner.coordinator_pid = None;
+                pids
+            } else {
+                (None, None)
+            }
+        };
+
+        // If one cluster process died, the cluster is broken. Terminate any surviving
+        // sibling process immediately so it doesn't linger and hold ports open.
+        if let Some(pid) = coord_pid {
+            let _ = shutdown_managed_child(pid, &self.manager.managed_children, 1000);
+        }
+        if let Some(pid) = rpc_pid {
+            let _ = shutdown_managed_child(pid, &self.manager.managed_children, 1000);
+        }
+    }
+
     /// Returns the current cluster orchestration status.
     pub fn get_status(&self) -> ClusterStatus {
+        self.refresh_liveness();
         let inner = self.inner.lock().unwrap();
         ClusterStatus {
             state: inner.state.clone(),
@@ -108,6 +182,7 @@ impl Orchestrator {
             rpc_port: inner.rpc_port,
             coordinator_port: inner.coordinator_port,
             last_error: inner.last_error.clone(),
+            active_profile: inner.active_profile.clone(),
         }
     }
 
@@ -214,8 +289,24 @@ impl Orchestrator {
                 {
                     let mut map = self.manager.managed_children.lock().unwrap();
                     if let Some(child) = map.get_mut(&pid) {
-                        if let ProcessStatus::Exited { exit_code } = child.refresh_status() {
-                            let err = format!("RPC worker PID {} exited prematurely with code {}", pid, exit_code);
+                        let exit_code = match child.refresh_status() {
+                            ProcessStatus::Exited { exit_code } => Some(*exit_code),
+                            _ => None,
+                        };
+                        if let Some(exit_code) = exit_code {
+                            let tail = child
+                                .logs
+                                .lock()
+                                .map(|logs| logs.get_lines(Some(12)).join(" | "))
+                                .unwrap_or_default();
+                            let err = if tail.is_empty() {
+                                format!("RPC worker PID {} exited prematurely with code {}", pid, exit_code)
+                            } else {
+                                format!(
+                                    "RPC worker PID {} exited prematurely with code {}. Last output: {}",
+                                    pid, exit_code, tail
+                                )
+                            };
                             drop(map);
                             self.rollback_partial(Some(pid), None);
                             self.set_error(err.clone());
@@ -302,8 +393,24 @@ impl Orchestrator {
             {
                 let mut map = self.manager.managed_children.lock().unwrap();
                 if let Some(child) = map.get_mut(&coord_pid) {
-                    if let ProcessStatus::Exited { exit_code } = child.refresh_status() {
-                        let err = format!("Coordinator PID {} exited prematurely with code {}", coord_pid, exit_code);
+                    let exit_code = match child.refresh_status() {
+                        ProcessStatus::Exited { exit_code } => Some(*exit_code),
+                        _ => None,
+                    };
+                    if let Some(exit_code) = exit_code {
+                        let tail = child
+                            .logs
+                            .lock()
+                            .map(|logs| logs.get_lines(Some(12)).join(" | "))
+                            .unwrap_or_default();
+                        let err = if tail.is_empty() {
+                            format!("Coordinator PID {} exited prematurely with code {}", coord_pid, exit_code)
+                        } else {
+                            format!(
+                                "Coordinator PID {} exited prematurely with code {}. Last output: {}",
+                                coord_pid, exit_code, tail
+                            )
+                        };
                         drop(map);
                         self.rollback_partial(rpc_pid, Some(coord_pid));
                         self.set_error(err.clone());

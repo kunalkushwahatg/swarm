@@ -61,6 +61,15 @@ Makefile
 **/gen/schemas/
 Cargo.lock.bk
 
+# --- Android Gradle Build Artifacts ---
+.gradle/
+**/gen/android/.gradle/
+**/gen/android/build/
+**/gen/android/app/build/
+**/gen/android/local.properties
+*.apk
+*.aab
+
 # --- Node / Vite / Frontend Artifacts ---
 **/node_modules/
 **/dist/
@@ -74,11 +83,16 @@ dist/cuda-redist/
 dist/*.zip
 dist/swarm-computer-b-transfer/
 dist/swarm-worker-windows-x64/
+vendor/jdk-21/
+vendor/*-build/
+vendor/*-install/
 
 # --- Logs, Temporary Traces, Dumps ---
 *.log
 *.sse
 *.pid
+swarm.json
+rc_verification_result.json
 out.txt
 output.txt
 gateway_out.txt

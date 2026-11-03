@@ -1,0 +1,81 @@
+﻿{
+    "Timestamp":  "2026-10-16T13:24:44.4606867+05:30",
+    "ComputerB":  {
+                      "TcpPort50052Open":  true,
+                      "PingSucceeded":  true,
+                      "TargetPort":  50052,
+                      "TargetIP":  "192.168.137.202"
+                  },
+    "ComputerA":  {
+                      "CPUCores":  4,
+                      "TotalPhysicalRAM_MB":  8032.36,
+                      "Manufacturer":  "Acer",
+                      "Model":  "Nitro AN515-52",
+                      "GPUs":  [
+                                   {
+                                       "Name":  "NVIDIA GeForce GTX 1050",
+                                       "AdapterRAM":  4293918720,
+                                       "DriverVersion":  "32.0.15.5612"
+                                   },
+                                   {
+                                       "Name":  "Intel(R) UHD Graphics 630",
+                                       "AdapterRAM":  1073741824,
+                                       "DriverVersion":  "31.0.101.2140"
+                                   }
+                               ],
+                      "NetworkInterfaces":  [
+                                                {
+                                                    "IPAddress":  "169.254.190.21",
+                                                    "InterfaceAlias":  "Bluetooth Network Connection"
+                                                },
+                                                {
+                                                    "IPAddress":  "192.168.137.1",
+                                                    "InterfaceAlias":  "Local Area Connection* 10"
+                                                },
+                                                {
+                                                    "IPAddress":  "169.254.55.240",
+                                                    "InterfaceAlias":  "Local Area Connection* 1"
+                                                },
+                                                {
+                                                    "IPAddress":  "192.168.0.110",
+                                                    "InterfaceAlias":  "Wi-Fi"
+                                                },
+                                                {
+                                                    "IPAddress":  "169.254.83.107",
+                                                    "InterfaceAlias":  "Tailscale"
+                                                },
+                                                {
+                                                    "IPAddress":  "192.168.204.41",
+                                                    "InterfaceAlias":  "Ethernet"
+                                                }
+                                            ],
+                      "ActiveListeners":  [
+                                              {
+                                                  "LocalAddress":  "127.0.0.1",
+                                                  "LocalPort":  50052,
+                                                  "OwningProcess":  17976
+                                              },
+                                              {
+                                                  "LocalAddress":  "0.0.0.0",
+                                                  "LocalPort":  8080,
+                                                  "OwningProcess":  16856
+                                              }
+                                          ],
+                      "CPU":  "Intel(R) Core(TM) i5-8300H CPU @ 2.30GHz",
+                      "OSVersion":  "10.0.26200",
+                      "Disks":  {
+                                    "DeviceID":  "C:",
+                                    "FreeSpace":  60440186880,
+                                    "Size":  499201863680
+                                },
+                      "CPUThreads":  8,
+                      "OS":  "Microsoft Windows 11 Home Single Language",
+                      "FreePhysicalRAM_MB":  263.91,
+                      "Hostname":  "KUNALKUSHWAHATG"
+                  },
+    "ActiveModel":  {
+                        "Path":  "C:\\Users\\kunal\\OneDrive\\Desktop\\swarm\\models\\qwen2.5-3b-instruct-q4_k_m.official-check.gguf",
+                        "SizeBytes":  2104932768,
+                        "Exists":  true
+                    }
+}

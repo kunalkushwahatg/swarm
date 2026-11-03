@@ -215,9 +215,11 @@ void test_3_failed_connection_isolation() {
     wm.add_worker(w_healthy);
     wm.add_worker(w_failing);
 
-    auto& workers = wm.get_workers();
-    wm.check_worker_health(workers[0]);
-    wm.check_worker_health(workers[1]);
+    wm.check_worker_health("worker-healthy");
+    wm.check_worker_health("worker-failing");
+
+    auto workers = wm.get_workers();
+    TEST_ASSERT(workers.size() == 2);
 
     // Worker 0 should be READY
     TEST_ASSERT(workers[0].state == WorkerState::READY);
@@ -228,7 +230,8 @@ void test_3_failed_connection_isolation() {
     TEST_ASSERT(!workers[1].last_error.empty());
 
     // Verify Worker 0 was not impacted by Worker 1's failure
-    wm.check_worker_health(workers[0]);
+    wm.check_worker_health("worker-healthy");
+    workers = wm.get_workers();
     TEST_ASSERT(workers[0].state == WorkerState::READY);
 
     closesocket(server_sock);
@@ -331,6 +334,60 @@ void test_5_backends_reflection_of_remote_allocation() {
     std::cout << "PASS\n";
 }
 
+// TEST 6: A worker whose backend session died must never be re-readied just
+// because a fresh TCP handshake to its port succeeds. Dispatching a graph into
+// such a worker aborts the coordinator (ggml-rpc cannot recover a dead session).
+void test_6_lost_backend_session_never_readied_by_reachable_port() {
+    std::cout << "[Test 6] Lost backend session is not re-readied by a live port... ";
+
+    // A listener stands in for "something still answers on the worker port".
+    SOCKET server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    TEST_ASSERT(server_sock != INVALID_SOCKET);
+    sockaddr_in server_addr{};
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    server_addr.sin_port = htons(0);
+    int bind_res = bind(server_sock, (sockaddr*)&server_addr, sizeof(server_addr));
+    TEST_ASSERT(bind_res == 0);
+    int listen_res = listen(server_sock, 5);
+    TEST_ASSERT(listen_res == 0);
+
+    int addr_len = sizeof(server_addr);
+    int gsn_res = getsockname(server_sock, (sockaddr*)&server_addr, &addr_len);
+    TEST_ASSERT(gsn_res == 0);
+    uint16_t live_port = ntohs(server_addr.sin_port);
+    TEST_ASSERT(live_port > 0);
+
+    WorkerManager wm;
+
+    WorkerInfo w_lost;
+    w_lost.id = "remote-lost-session";
+    w_lost.host = "127.0.0.1";
+    w_lost.port = live_port;
+    w_lost.type = WorkerType::REMOTE_RPC;
+    w_lost.state = WorkerState::READY;
+    w_lost.has_active_backend_connection = true; // it HAD a live GGML RPC session
+    w_lost.assigned_layers = { 25, 26, 27, 28, 29, 30 };
+    w_lost.assigned_layer_ranges = { { 25, 30 } };
+
+    wm.add_worker(w_lost);
+    wm.check_worker_health("remote-lost-session");
+
+    auto workers = wm.get_workers();
+    TEST_ASSERT(workers.size() == 1);
+    // The port answers, but the backend session is gone: must stay unavailable.
+    TEST_ASSERT(workers[0].state == WorkerState::UNAVAILABLE);
+    TEST_ASSERT(workers[0].last_error.find("restart the engine") != std::string::npos);
+
+    // And a second probe must not promote it either.
+    wm.check_worker_health("remote-lost-session");
+    workers = wm.get_workers();
+    TEST_ASSERT(workers[0].state == WorkerState::UNAVAILABLE);
+
+    closesocket(server_sock);
+    std::cout << "PASS\n";
+}
+
 int main() {
 #ifdef _WIN32
     WSADATA wsaData;
@@ -343,6 +400,7 @@ int main() {
     test_1_active_connection_not_marked_unavailable();
     test_2_dead_or_unreachable_worker_detected();
     test_3_failed_connection_isolation();
+    test_6_lost_backend_session_never_readied_by_reachable_port();
     test_4_dynamic_placement_insufficient_memory_zero_cap();
     test_5_backends_reflection_of_remote_allocation();
 

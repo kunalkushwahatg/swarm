@@ -5,20 +5,28 @@ import { ChatPanel } from "./components/ChatPanel";
 import { DevicesPanel } from "./components/DevicesPanel";
 import { SessionPanel } from "./components/SessionPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { WorkerPanel } from "./components/WorkerPanel";
+import { ModelLibraryPanel } from "./components/models/ModelLibraryPanel";
+import { ClusterStartupModal } from "./components/ClusterStartupModal";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { SupervisorProvider } from "./hooks/useSupervisor";
+import { SwarmSessionProvider } from "./hooks/useSwarmSession";
+
+import { isAndroid } from "./lib/platform";
 
 function AppContent() {
   const [view, setView] = useState<View>(() => {
     const hash = window.location.hash.replace("#", "") as View;
-    if (hash === "devices" || hash === "session" || hash === "settings") {
+    if (hash === "devices" || hash === "models" || hash === "session" || hash === "settings" || hash === "worker" || hash === "chat") {
       return hash;
     }
-    return "chat";
+    return isAndroid ? "worker" : "chat";
   });
 
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash.replace("#", "") as View;
-      if (hash === "devices" || hash === "session" || hash === "settings" || hash === "chat") {
+      if (hash === "devices" || hash === "models" || hash === "session" || hash === "settings" || hash === "chat" || hash === "worker") {
         setView(hash);
       }
     };
@@ -31,10 +39,28 @@ function AppContent() {
     setView(v);
   };
 
+  // Keep every panel mounted so local view state (chat transcript, draft,
+  // worker edits, modal state, scroll position) survives navigation.
+  const panels = [
+    { id: "chat" as View, title: "Chat", node: <ChatPanel /> },
+    { id: "models" as View, title: "Model Library", node: <ModelLibraryPanel /> },
+    { id: "devices" as View, title: "Devices", node: <DevicesPanel /> },
+    {
+      id: "worker" as View,
+      title: "Share Compute",
+      node: <WorkerPanel onSwitchToInference={() => handleViewChange("chat")} />,
+    },
+    { id: "session" as View, title: "Session", node: <SessionPanel /> },
+    { id: "settings" as View, title: "Settings", node: <SettingsPanel /> },
+  ];
+
   return (
     <div className="app-shell">
       {/* Top sticky session bar */}
       <TopBar onSelectView={handleViewChange} />
+
+      {/* Cluster Startup & Model Streaming HUD */}
+      <ClusterStartupModal />
 
       {/* Responsive layout container */}
       <div className="app-body">
@@ -46,10 +72,22 @@ function AppContent() {
 
         {/* Main Content Area */}
         <main className="app-main">
-          {view === "chat" && <ChatPanel />}
-          {view === "devices" && <DevicesPanel />}
-          {view === "session" && <SessionPanel />}
-          {view === "settings" && <SettingsPanel />}
+          {panels.map((panel) => {
+            const isActive = view === panel.id;
+            return (
+              <div
+                key={panel.id}
+                style={{ display: isActive ? "contents" : "none" }}
+                aria-hidden={!isActive}
+              >
+                <ErrorBoundary
+                  fallbackTitle={`An error occurred while loading ${panel.title}`}
+                >
+                  {panel.node}
+                </ErrorBoundary>
+              </div>
+            );
+          })}
         </main>
       </div>
     </div>
@@ -57,5 +95,13 @@ function AppContent() {
 }
 
 export default function App() {
-  return <AppContent />;
+  return (
+    <ErrorBoundary fallbackTitle="Swarm Desktop UI encountered an error">
+      <SupervisorProvider pollIntervalMs={3000}>
+        <SwarmSessionProvider pollIntervalMs={3000}>
+          <AppContent />
+        </SwarmSessionProvider>
+      </SupervisorProvider>
+    </ErrorBoundary>
+  );
 }

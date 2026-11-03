@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ffi::OsStr;
+#[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::ptr;
@@ -140,6 +141,7 @@ impl ProcessManager {
     }
 
     /// Spawns an explicit child process inside the Job Object using race-free suspended creation.
+    #[cfg(windows)]
     pub fn spawn_child(
         &self,
         executable: &Path,
@@ -314,6 +316,70 @@ impl ProcessManager {
         }
     }
 
+    #[cfg(not(windows))]
+    pub fn spawn_child(
+        &self,
+        executable: &Path,
+        args: &[&str],
+        working_dir: &Path,
+        env_vars: &[(&str, &str)],
+        _extra_dll_dirs: &[&Path],
+        role: ProcessRole,
+        bound_ports: Vec<u16>,
+        _with_console: bool,
+        _hide_console: bool,
+    ) -> Result<u32, String> {
+        use std::process::{Command, Stdio};
+        use std::io::{BufRead, BufReader};
+
+        let mut cmd = Command::new(executable);
+        cmd.args(args);
+        cmd.current_dir(working_dir);
+        for &(k, v) in env_vars {
+            cmd.env(k, v);
+        }
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(crate::supervisor::win32::CREATE_NO_WINDOW);
+        }
+
+        let mut child_proc = cmd.spawn().map_err(|e| format!("Failed to spawn {}: {}", executable.display(), e))?;
+        let pid = child_proc.id();
+        let log_buffer = Arc::new(Mutex::new(LogRingBuffer::new(2000, 512 * 1024)));
+
+        if let Some(stdout) = child_proc.stdout.take() {
+            let reader_logs = Arc::clone(&log_buffer);
+            thread::spawn(move || {
+                let reader = BufReader::new(stdout);
+                for line in reader.lines().flatten() {
+                    let mut buf = reader_logs.lock().unwrap();
+                    buf.push(line);
+                }
+            });
+        }
+
+        let child = ManagedChild {
+            pid,
+            role,
+            executable_path: executable.to_path_buf(),
+            h_process: ptr::null_mut(),
+            h_thread: ptr::null_mut(),
+            started_at: Instant::now(),
+            status: ProcessStatus::Running,
+            bound_ports,
+            logs: log_buffer,
+        };
+
+        let mut map = self.managed_children.lock().unwrap();
+        map.insert(pid, child);
+        log::info!("[ProcessManager] Spawned {:?} child PID {}", role, pid);
+        Ok(pid)
+    }
+
     /// Takes a point-in-time status snapshot of all managed processes.
     pub fn get_snapshots(&self) -> Vec<ChildProcessSnapshot> {
         let mut map = self.managed_children.lock().unwrap();
@@ -393,6 +459,7 @@ fn run_pipe_reader(pipe_usize: usize, logs: Arc<Mutex<LogRingBuffer>>) {
 /// Builds a validated, alphabetically sorted, double-null-terminated UTF-16 environment block.
 /// Resolves Windows environment variable keys case-insensitively, preventing duplicates (e.g. `Path` vs `PATH`).
 /// Automatically prepends `extra_dll_dirs` to the `PATH` variable.
+#[cfg(windows)]
 pub fn build_windows_environment_block(
     env_vars: &[(&str, &str)],
     extra_dll_dirs: &[&Path],
@@ -450,6 +517,14 @@ pub fn build_windows_environment_block(
     wide_block.push(0); // Final terminating null
 
     Ok(wide_block)
+}
+
+#[cfg(not(windows))]
+pub fn build_windows_environment_block(
+    _env_vars: &[(&str, &str)],
+    _extra_dll_dirs: &[&Path],
+) -> Result<Vec<u16>, String> {
+    Ok(Vec::new())
 }
 
 /// Helper for tests: decodes a double-null-terminated UTF-16 environment block into a HashMap.

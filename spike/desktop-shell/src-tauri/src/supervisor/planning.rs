@@ -1,8 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// Cost constants for Qwen 2.5 3B (37 total layers: layers 0..35 + output layer 36)
+/// Fallback cost constants for a Qwen 2.5 3B-class model (37 total layers:
+/// layers 0..35 plus the output layer). These are only used when the selected
+/// model's GGUF metadata is unavailable; otherwise the planner derives the
+/// layer count and weight bytes from the actual model file.
 pub const TOTAL_MODEL_LAYERS: i32 = 37;
+pub const TOTAL_MODEL_TRANSFORMER_LAYERS: i32 = 36;
 pub const BASE_WEIGHTS_PER_LAYER_BYTES: u64 = 73 * 1024 * 1024; // ~73 MiB (Q4_K_M baseline)
 pub const BASE_WEIGHTS_Q5KM_BYTES: u64 = 85 * 1024 * 1024;     // ~85 MiB (Q5_K_M)
 pub const BASE_WEIGHTS_Q8_0_BYTES: u64 = 115 * 1024 * 1024;    // ~115 MiB (Q8_0)
@@ -13,9 +17,63 @@ pub const DEFAULT_HEADROOM_RAM_MB: u64 = 1024;                  // 1 GiB OS head
 pub const DEFAULT_HEADROOM_VRAM_MB: u64 = 256;                  // 256 MiB GPU headroom
 pub const TELEMETRY_FRESHNESS_TTL_MS: u64 = 30_000;             // 30 seconds
 
+/// Model-specific planning inputs. `total_layers` includes the output layer;
+/// `transformer_layers` is the GGUF block_count passed to the native policy.
+#[derive(Debug, Clone, Copy)]
+pub struct ModelPlanningProfile {
+    pub total_layers: i32,
+    pub transformer_layers: i32,
+    pub weights_bytes_per_layer: Option<u64>,
+}
+
+impl Default for ModelPlanningProfile {
+    fn default() -> Self {
+        Self {
+            total_layers: TOTAL_MODEL_LAYERS,
+            transformer_layers: TOTAL_MODEL_TRANSFORMER_LAYERS,
+            weights_bytes_per_layer: None,
+        }
+    }
+}
+
+/// Reads the selected GGUF's layer count and derives a per-layer weight budget
+/// from its file size. Falls back to the Qwen-class defaults on parse failure.
+pub fn model_planning_profile_from_path(path: &Path) -> ModelPlanningProfile {
+    let metadata = match crate::supervisor::models::gguf::parse_gguf_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => return ModelPlanningProfile::default(),
+    };
+    let transformer_layers = match metadata.block_count {
+        Some(count) if count > 0 && count <= i32::MAX as u64 => count as i32,
+        _ => return ModelPlanningProfile::default(),
+    };
+    let total_layers = transformer_layers + 1;
+    let weights_bytes_per_layer = std::fs::metadata(path)
+        .ok()
+        .map(|m| m.len())
+        .filter(|size| *size > 0)
+        .map(|size| size / total_layers as u64);
+    ModelPlanningProfile {
+        total_layers,
+        transformer_layers,
+        weights_bytes_per_layer,
+    }
+}
+
 /// Calculates conservative bytes per layer based on context size (Q4_K_M baseline)
 pub fn estimate_bytes_per_layer(n_ctx: i32) -> u64 {
     estimate_bytes_per_layer_with_params(n_ctx, "Q4_K_M", 1)
+}
+
+/// Calculates layer cost using the actual selected model's weight bytes per
+/// layer when available. The KV/compute/rounding terms mirror the native
+/// ConservativeCapacityEstimator so preview and runtime capacity agree.
+pub fn estimate_bytes_per_layer_with_weights(n_ctx: i32, weights_bytes_per_layer: Option<u64>) -> u64 {
+    let weights = weights_bytes_per_layer.unwrap_or(BASE_WEIGHTS_PER_LAYER_BYTES);
+    let ctx_scale = if n_ctx > 0 { n_ctx as f64 / 2048.0 } else { 1.0 };
+    let kv_scaled = (BASE_KV_CACHE_2048_BYTES as f64 * ctx_scale) as u64;
+    let total = weights + kv_scaled + COMPUTE_BUFFER_PER_LAYER_BYTES;
+    total + (total / 50)
 }
 
 /// Parameterized memory cost estimator accounting for quantization, context length, and batch scaling
@@ -39,11 +97,24 @@ pub fn estimate_bytes_per_layer_with_params(n_ctx: i32, quantization: &str, batc
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DeviceAllocationSetting {
     pub device_id: String,
+    #[serde(default)]
     pub device_name: String,
-    pub backend_type: String, // "cuda" | "rpc" | "cpu"
+    #[serde(default)]
+    pub backend_type: String,
+    #[serde(default = "default_true")]
     pub enabled: bool,
-    pub memory_budget_mb: u64, // Target budget in MB
+    #[serde(default)]
+    pub memory_budget_mb: u64,
+    #[serde(default)]
     pub is_loopback: bool,
+    #[serde(default)]
+    pub split_weight: Option<f32>,
+    #[serde(default)]
+    pub locked_split: Option<bool>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Compute Allocation Configuration persisted to disk
@@ -95,6 +166,10 @@ pub struct DevicePlanSummary {
     pub backend_type: String,
     pub is_loopback: bool,
     pub enabled: bool,
+    #[serde(default)]
+    pub is_online: bool,
+    #[serde(default)]
+    pub is_stale: bool,
     pub measured_total_mb: Option<u64>,
     pub measured_free_mb: Option<u64>,
     pub reserved_headroom_mb: u64,
@@ -107,6 +182,14 @@ pub struct DevicePlanSummary {
     pub provenance: String,
     pub control_enforcement: String, // "HARD_ENFORCED" | "TARGET_SPLIT" | "ADVISORY_ESTIMATE"
     pub warning: Option<String>,
+    #[serde(default)]
+    pub split_weight_percent: u32,
+    #[serde(default)]
+    pub memory_budget_mb: u64,
+    #[serde(default)]
+    pub control_type: String,
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 /// Complete plan preview returned before applying
@@ -120,6 +203,12 @@ pub struct AllocationPlanPreview {
     pub risk_explanation: String,
     pub model_total_layers: i32,
     pub total_offload_layers: i32,
+    #[serde(default)]
+    pub total_model_layers: i32,
+    #[serde(default)]
+    pub planned_offload_layers: i32,
+    #[serde(default)]
+    pub total_cluster_capacity_layers: i32,
     pub estimated_bytes_per_layer: u64,
     pub assumptions_explanation: String,
     pub device_plans: Vec<DevicePlanSummary>,
@@ -131,17 +220,34 @@ pub struct AllocationPlanPreview {
 pub struct AllocationPlanner;
 
 impl AllocationPlanner {
-    /// Evaluates a candidate allocation plan against current device telemetry
+    /// Evaluates a candidate allocation plan against current device telemetry,
+    /// using fallback Qwen-class model assumptions.
     pub fn evaluate_plan(
         config: &ComputeAllocationConfig,
         candidates: &[CandidateDeviceTelemetry],
     ) -> AllocationPlanPreview {
+        Self::evaluate_plan_with_profile(config, candidates, &ModelPlanningProfile::default())
+    }
+
+    /// Evaluates a plan using the selected model's actual layer count and
+    /// per-layer weight budget. This keeps the Rust preview aligned with the
+    /// native placement policy that will make the real allocation decision.
+    pub fn evaluate_plan_with_profile(
+        config: &ComputeAllocationConfig,
+        candidates: &[CandidateDeviceTelemetry],
+        profile: &ModelPlanningProfile,
+    ) -> AllocationPlanPreview {
         let is_auto = config.mode == "automatic";
-        let bytes_per_layer = estimate_bytes_per_layer(config.context_size);
+        let total_model_layers = profile.total_layers.max(1);
+        let transformer_layers = profile.transformer_layers.max(0);
+        let bytes_per_layer =
+            estimate_bytes_per_layer_with_weights(config.context_size, profile.weights_bytes_per_layer);
         let mb_per_layer = ((bytes_per_layer + 1024 * 1024 - 1) / (1024 * 1024)).max(1);
 
-        let target_layers = if config.total_offload_layers < 0 || config.total_offload_layers > TOTAL_MODEL_LAYERS {
-            TOTAL_MODEL_LAYERS
+        let target_layers = if config.total_offload_layers < 0
+            || config.total_offload_layers > total_model_layers
+        {
+            total_model_layers
         } else {
             config.total_offload_layers
         };
@@ -187,6 +293,17 @@ impl AllocationPlanner {
                 validation_errors.push(format!("Device '{}' is offline or unreachable but marked as enabled for inference.", c.device_id));
             }
 
+            if is_auto && is_enabled && c.memory_free_mb.is_none() {
+                let w = format!(
+                    "Device '{}' capacity is unknown (memory telemetry unavailable). A conservative 3,072 MB planning baseline is used; use manual mode for an explicit budget.",
+                    c.device_id
+                );
+                validation_warnings.push(w.clone());
+                if device_warning.is_none() {
+                    device_warning = Some(w);
+                }
+            }
+
             // Calculate usable budget
             let measured_free = c.memory_free_mb.unwrap_or(0);
             let measured_total = c.memory_total_mb.unwrap_or(0);
@@ -198,8 +315,12 @@ impl AllocationPlanner {
                 measured_free
             };
 
+            // For remote workers where memory telemetry is not directly measured,
+            // provide a safe baseline budget (e.g. 3072 MB = ~32 layers) if the node is online
             let usable_mb = if partitioned_free > headroom {
                 partitioned_free - headroom
+            } else if !c.is_loopback && c.backend_type == "rpc" && c.is_online {
+                3072
             } else {
                 0
             };
@@ -207,7 +328,18 @@ impl AllocationPlanner {
             let planned_budget_mb = if is_auto {
                 usable_mb
             } else {
-                let user_budget = setting.map(|s| s.memory_budget_mb).unwrap_or(usable_mb);
+                let user_budget = setting
+                    .map(|s| {
+                        if s.memory_budget_mb > 0 {
+                            s.memory_budget_mb
+                        } else if let Some(w) = s.split_weight {
+                            ((target_layers as f32 * w).round() as u64 * mb_per_layer).max(1024)
+                        } else {
+                            usable_mb
+                        }
+                    })
+                    .unwrap_or(usable_mb);
+
                 if is_enabled && measured_total > 0 && user_budget > measured_total {
                     validation_errors.push(format!(
                         "Configured memory budget of {} MB for '{}' exceeds physical capacity ({} MB).",
@@ -224,8 +356,18 @@ impl AllocationPlanner {
                 user_budget
             };
 
+            // Runtime placement is driven by the per-device memory budgets
+            // (SWARM_WORKER_PROFILES), not by the UI's raw split-weight value.
+            // The native policy caps each device's capacity at the requested
+            // offload count before deriving split weights; mirror that cap so
+            // the preview's per-device counts match the runtime exactly.
+            let raw_capacity = if is_enabled {
+                ((planned_budget_mb * 1024 * 1024) / bytes_per_layer) as i32
+            } else {
+                0
+            };
             let estimated_capacity = if is_enabled {
-                (planned_budget_mb / mb_per_layer) as i32
+                raw_capacity.min(target_layers)
             } else {
                 0
             };
@@ -237,9 +379,9 @@ impl AllocationPlanner {
             let control_enforcement = if c.backend_type == "rpc" && !is_enabled {
                 "HARD_ENFORCED (Excluded from RPC endpoints)".to_string()
             } else if is_auto {
-                "TARGET_SPLIT (Dynamic telemetry-derived split)".to_string()
+                "TARGET_SPLIT (Dynamic telemetry-derived proportional tensor split; not an OS memory cap)".to_string()
             } else {
-                "TARGET_SPLIT (Manual budget-derived split)".to_string()
+                "TARGET_SPLIT (Manual budget-derived proportional tensor split; not an OS memory cap)".to_string()
             };
 
             device_plans.push(DevicePlanSummary {
@@ -248,6 +390,8 @@ impl AllocationPlanner {
                 backend_type: c.backend_type.clone(),
                 is_loopback: c.is_loopback,
                 enabled: is_enabled,
+                is_online: c.is_online,
+                is_stale: c.is_stale,
                 measured_total_mb: c.memory_total_mb,
                 measured_free_mb: c.memory_free_mb,
                 reserved_headroom_mb: headroom,
@@ -258,8 +402,12 @@ impl AllocationPlanner {
                 planned_layer_ranges: Vec::new(),
                 split_weight: 0.0,
                 provenance: c.provenance.clone(),
+                control_type: control_enforcement.clone(),
                 control_enforcement,
-                warning: device_warning,
+                warning: device_warning.clone(),
+                warnings: device_warning.into_iter().collect(),
+                split_weight_percent: 0,
+                memory_budget_mb: planned_budget_mb,
             });
         }
 
@@ -271,39 +419,43 @@ impl AllocationPlanner {
             .map(|(i, _)| i)
             .collect();
 
-        // Fastest local devices (CUDA) host initial layers (0..N) for lowest latency,
-        // followed by distributed RPC workers and fallback devices.
+        // The native policy builds its candidate list from RPC workers first,
+        // then the local CUDA device. Match that stable order so the preview's
+        // per-device layer counts and ranges line up with the runtime tensor
+        // split (including the remainder layer when capacities tie).
         enabled_plans.sort_by_key(|&idx| {
-            if device_plans[idx].backend_type == "cuda" {
+            if device_plans[idx].backend_type == "rpc" {
                 0
-            } else if device_plans[idx].backend_type == "rpc" {
+            } else if device_plans[idx].backend_type == "cuda" {
                 1
             } else {
                 2
             }
         });
 
-        if enabled_plans.is_empty() {
+        if target_layers > 0 && enabled_plans.is_empty() {
             validation_errors.push("No enabled devices have sufficient memory capacity to host model layers.".to_string());
-        } else if total_capacity < target_layers {
-            validation_warnings.push(format!(
-                "Total cluster layer capacity ({} layers) is less than requested offload ({} layers). Some layers will remain on host CPU.",
+        } else if target_layers > 0 && total_capacity < target_layers {
+            validation_errors.push(format!(
+                "Total cluster layer capacity ({} layers) is less than requested offload ({} layers). Increase device budgets or reduce total offloaded layers; the native placement policy will refuse to start this configuration.",
                 total_capacity, target_layers
             ));
         }
 
-        // Compute proportional layer distribution and sequential layer ranges
+        // Compute proportional layer distribution and sequential layer ranges.
+        // Distribution is proportional to the budget-derived capacity because
+        // that is exactly what the native resource-aware policy uses.
         let mut remaining_layers_to_assign = target_layers;
         let mut current_layer_idx = 0;
 
         for &idx in &enabled_plans {
             let cap = device_plans[idx].estimated_layer_capacity;
-            let assigned = if total_capacity > 0 {
-                let share = (cap as f64 / total_capacity as f64) * target_layers as f64;
-                (share.round() as i32).min(cap).min(remaining_layers_to_assign)
+            let share = if total_capacity > 0 {
+                (cap as f64 / total_capacity as f64 * target_layers as f64).round() as i32
             } else {
                 0
             };
+            let assigned = share.min(cap).min(remaining_layers_to_assign).max(0);
 
             device_plans[idx].planned_layer_count = assigned;
             if total_capacity > 0 {
@@ -319,22 +471,31 @@ impl AllocationPlanner {
             }
         }
 
-        // Assign any remainder to the highest-capacity device
+        // Assign any remainder to the enabled device with the most spare capacity.
         if remaining_layers_to_assign > 0 && !enabled_plans.is_empty() {
-            let best_idx = enabled_plans[0];
-            let additional = remaining_layers_to_assign.min(device_plans[best_idx].estimated_layer_capacity - device_plans[best_idx].planned_layer_count);
-            if additional > 0 {
-                device_plans[best_idx].planned_layer_count += additional;
-                let start = current_layer_idx;
-                let end = current_layer_idx + additional - 1;
-                if device_plans[best_idx].planned_layer_ranges.is_empty() {
-                    device_plans[best_idx].planned_layer_ranges.push((start, end));
-                } else {
-                    let range_len = device_plans[best_idx].planned_layer_ranges.len();
-                    device_plans[best_idx].planned_layer_ranges[range_len - 1].1 += additional;
+            let mut best_idx = enabled_plans[0];
+            let mut best_remaining = 0;
+            for &idx in &enabled_plans {
+                let spare = device_plans[idx]
+                    .estimated_layer_capacity
+                    .saturating_sub(device_plans[idx].planned_layer_count);
+                if spare > best_remaining {
+                    best_remaining = spare;
+                    best_idx = idx;
                 }
             }
+
+            let additional = remaining_layers_to_assign.min(best_remaining);
+            if additional > 0 {
+                let start = current_layer_idx;
+                let end = start + additional - 1;
+                device_plans[best_idx].planned_layer_count += additional;
+                device_plans[best_idx].planned_layer_ranges.push((start, end));
+                remaining_layers_to_assign -= additional;
+            }
         }
+
+        let planned_offload_layers = target_layers.saturating_sub(remaining_layers_to_assign);
 
         // Generate environment variable strings
         let placement_policy_env = if is_auto {
@@ -370,19 +531,35 @@ impl AllocationPlanner {
             ("SAFE".to_string(), "Plan provides conservative headroom (>1,024 MB RAM) and valid device capacities across all participating computers.".to_string())
         };
 
+        let weights_mb = profile
+            .weights_bytes_per_layer
+            .unwrap_or(BASE_WEIGHTS_PER_LAYER_BYTES)
+            / (1024 * 1024);
+        let kv_mb = (BASE_KV_CACHE_2048_BYTES as f64
+            * (config.context_size.max(1) as f64 / 2048.0)) as u64
+            / (1024 * 1024);
         let assumptions_explanation = format!(
-            "ASSUMPTIONS: Model Qwen 2.5 3B ({} layers total: 36 transformer blocks + 1 output layer). Cost per layer at n_ctx={}: ~{} MiB ({} MiB weights [Q4_K_M] + ~{} MiB KV cache + ~{} MiB compute buffer). Headroom reserved: {} MB RAM, {} MB VRAM. \
-            INACCURACY CONDITIONS: 1) Non-Q4 quantizations (Q8_0 adds ~42 MiB/layer; FP16 adds ~102 MiB/layer); 2) Extended context lengths (KV cache expands to 64 MiB/layer at 8k ctx, 256 MiB/layer at 32k ctx); 3) Multi-sequence concurrent batches; 4) CUDA runtime driver overhead (~250-500 MB VRAM) and DWM display composition; 5) RPC network socket non-paged pool memory. \
+            "ASSUMPTIONS: Selected GGUF model ({} layers total: {} transformer blocks + 1 output layer). Cost per layer at n_ctx={}: ~{} MiB ({} MiB weights derived from the model file + ~{} MiB KV cache + ~{} MiB compute buffer, plus 2% margin). Headroom reserved: {} MB RAM, {} MB VRAM. \
+            INACCURACY CONDITIONS: 1) Quantization metadata can shift per-layer weights; 2) Extended context lengths expand KV cache; 3) Multi-sequence concurrent batches; 4) CUDA runtime driver overhead (~250-500 MB VRAM) and DWM display composition; 5) RPC network socket non-paged pool memory. \
             CONTROL ENFORCEMENT: Device memory budgets (SWARM_WORKER_PROFILES) are advisory targets used to calculate proportional tensor splits (model_params.tensor_split), NOT hard OS memory caps. The only genuinely hard-enforced control is endpoint exclusion from SWARM_RPC_ENDPOINTS.",
-            TOTAL_MODEL_LAYERS,
+            total_model_layers,
+            transformer_layers,
             config.context_size,
             mb_per_layer,
-            BASE_WEIGHTS_PER_LAYER_BYTES / (1024 * 1024),
-            (BASE_KV_CACHE_2048_BYTES * (config.context_size as u64 / 2048)) / (1024 * 1024),
+            weights_mb,
+            kv_mb,
             COMPUTE_BUFFER_PER_LAYER_BYTES / (1024 * 1024),
             config.reserved_headroom_ram_mb,
             config.reserved_headroom_vram_mb,
         );
+
+        // Populate backward-compatible frontend alias fields
+        for dev in &mut device_plans {
+            dev.split_weight_percent = (dev.split_weight * 100.0).round() as u32;
+            dev.warnings = dev.warning.clone().into_iter().collect();
+            dev.control_type = dev.control_enforcement.clone();
+            dev.memory_budget_mb = dev.planned_budget_mb;
+        }
 
         AllocationPlanPreview {
             mode: config.mode.clone(),
@@ -391,8 +568,11 @@ impl AllocationPlanner {
             validation_warnings,
             risk_level,
             risk_explanation,
-            model_total_layers: TOTAL_MODEL_LAYERS,
+            model_total_layers: total_model_layers,
             total_offload_layers: target_layers,
+            total_model_layers,
+            planned_offload_layers,
+            total_cluster_capacity_layers: total_capacity,
             estimated_bytes_per_layer: bytes_per_layer,
             assumptions_explanation,
             device_plans,

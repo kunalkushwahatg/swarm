@@ -145,3 +145,29 @@ When `SWARM_DEPLOYMENT_ENV=production` is active:
 - [x] **Advisory Logging:** The coordinator will inspect configured `SWARM_RPC_ENDPOINTS`. If remote (non-loopback) addresses are detected, it outputs security advisories reminding operators that GGML RPC is unauthenticated and must be VPN-encapsulated.
 - [x] **Agent Argument Audit:** If `--token` is provided on the agent CLI, `swarm_agent.exe` outputs a visible warning prompting the operator to migrate to `--token-file`.
 - [x] **Replay Protection:** Coordinator enforces strictly monotonic sequence numbers (`sequence_number > last_seq`) per `agent_session_id`.
+
+---
+
+## 7. Single-Computer Local Development & Testing
+
+For developing and testing Swarm entirely on a single machine without remote devices:
+
+1. **Start Environment (Local RPC Mode):**
+   Launches loopback RPC worker bound strictly to `127.0.0.1:50052` and Swarm Coordinator bound strictly to `127.0.0.1:8080`:
+   ```powershell
+   .\scripts\Start-LocalDev.ps1
+   ```
+   *(For rapid UI and control-flow testing without RPC, use `.\scripts\Start-LocalDev.ps1 -MockWorker`).*
+
+2. **Validate Inference:**
+   Runs complete health, backend allocation check, and test prompt inference:
+   ```powershell
+   .\scripts\Test-LocalDevInference.ps1
+   ```
+
+3. **Stop Environment Cleanly:**
+   Terminates coordinator and worker processes, verifies process exit, and confirms ports 8080 and 50052 are released:
+   ```powershell
+   .\scripts\Stop-LocalDev.ps1
+   ```
+

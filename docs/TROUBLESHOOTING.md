@@ -106,6 +106,15 @@ Run PowerShell as Administrator on Computer A:
 New-NetFirewallRule -DisplayName "Swarm Coordinator HTTP" -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow -Profile Private,Public
 ```
 
+### Wi-Fi Hotspot & ICMP vs TCP Diagnostic Note:
+- **Ping vs TCP Reachability:** On Windows, when connecting via a Wi-Fi hotspot, the network connection profile is categorized as **`Public`** by default. Windows Defender Firewall silences and drops all inbound ICMPv4 echo requests (pings) on Public networks unless explicitly enabled.
+- A failing `ping <IP>` does **not** indicate network failure or that Swarm is unreachable. ICMP and TCP are completely independent protocols.
+- Always verify actual Swarm service connectivity using TCP socket checks:
+  ```powershell
+  Test-NetConnection -ComputerName <Target_IP> -Port 50052
+  ```
+
+
 ---
 
 ## 5. Telemetry Authentication Failures (HTTP 401 / 403)

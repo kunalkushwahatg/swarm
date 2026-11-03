@@ -210,7 +210,19 @@ void test_zero_capacity_backend() {
     // CUDA receives all 4 requested layers
     assert(res.plans[1].predicted_layers.size() == 4);
 
-    std::cout << "PASS (Zero-capacity worker assigned 0 layers without error)" << std::endl;
+    // Explicit zero offload layers is valid CPU-only placement. The split
+    // vector is all zeros, which must not be mistaken for an error.
+    PlacementPolicyResult cpu_only = PlacementPolicyEngine::evaluate(
+        PlacementPolicyType::DYNAMIC, devices, empty_profiles, 36, 0, 16);
+    assert(cpu_only.success);
+    assert(cpu_only.total_offload_layers_requested == 0);
+    assert(cpu_only.total_capacity_available == 0);
+    for (const auto& plan : cpu_only.plans) {
+        assert(plan.capped_layer_capacity == 0);
+        assert(plan.predicted_layers.empty());
+    }
+
+    std::cout << "PASS (Zero-capacity worker assigned 0 layers without error; zero-layer CPU-only accepted)" << std::endl;
 }
 
 // TEST 6: Insufficient total capacity rejection

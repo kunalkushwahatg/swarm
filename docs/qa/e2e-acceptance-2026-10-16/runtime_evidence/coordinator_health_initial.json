@@ -1,0 +1,97 @@
+﻿{
+    "context":  {
+                    "created":  true,
+                    "size":  2048
+                },
+    "inference":  {
+                      "ready":  false,
+                      "ready_required_rpc_workers":  0,
+                      "ready_workers":  0,
+                      "required_rpc_workers":  1,
+                      "total_rpc_workers":  1,
+                      "total_workers":  2,
+                      "unready_reason":  "Required RPC worker \u0027rpc-endpoint-0\u0027 is UNAVAILABLE"
+                  },
+    "model":  {
+                  "loaded":  true,
+                  "path":  "C:\\Users\\kunal\\AppData\\Local\\Swarm\\models\\qwen2.5-3b-instruct-q4_k_m.official-check.gguf"
+              },
+    "server":  {
+                   "host":  "0.0.0.0",
+                   "port":  8080,
+                   "state":  "running"
+               },
+    "status":  "ok",
+    "timestamp":  "2026-10-16 13:25:39",
+    "workers":  [
+                    {
+                        "assigned_layer_ranges":  [
+                                                      [
+                                                          19,
+                                                          27
+                                                      ]
+                                                  ],
+                        "assigned_layers":  [
+                                                19,
+                                                20,
+                                                21,
+                                                22,
+                                                23,
+                                                24,
+                                                25,
+                                                26,
+                                                27
+                                            ],
+                        "backend_id":  "RPC0",
+                        "backend_type":  "remote_rpc",
+                        "compute_buffer_bytes":  78129398,
+                        "device_name":  "RPC0",
+                        "host":  "192.168.137.202",
+                        "id":  "rpc-endpoint-0",
+                        "inference_count":  4,
+                        "is_inference_active":  false,
+                        "is_loopback":  false,
+                        "kv_buffer_bytes":  18874368,
+                        "last_error":  "RPC backend connection to 192.168.137.202:50052 was lost",
+                        "last_health_check":  0,
+                        "log_derived":  true,
+                        "measurement_status":  "observed",
+                        "memory_free_bytes":  4056088576,
+                        "memory_scope":  "remote_host:192.168.137.202",
+                        "memory_total_bytes":  16539545600,
+                        "model_buffer_bytes":  408116265,
+                        "port":  50052,
+                        "started_at":  0,
+                        "state":  "UNAVAILABLE",
+                        "type":  "REMOTE_RPC"
+                    },
+                    {
+                        "assigned_layer_ranges":  [
+
+                                                  ],
+                        "assigned_layers":  [
+
+                                            ],
+                        "backend_id":  "local-cuda-0",
+                        "backend_type":  "LOCAL_CUDA",
+                        "device_name":  "CUDA0",
+                        "device_type":  1,
+                        "host":  "127.0.0.1",
+                        "id":  "local-cuda-0",
+                        "inference_count":  0,
+                        "is_inference_active":  false,
+                        "is_loopback":  false,
+                        "last_error":  "Worker is not reachable at 127.0.0.1:0",
+                        "last_health_check":  0,
+                        "log_derived":  false,
+                        "measurement_status":  "unavailable",
+                        "memory_free_bytes":  3526780519,
+                        "memory_scope":  "unspecified",
+                        "memory_total_bytes":  4294836224,
+                        "port":  0,
+                        "started_at":  0,
+                        "state":  "UNAVAILABLE",
+                        "type":  "LOCAL_CUDA"
+                    }
+                ]
+}

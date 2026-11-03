@@ -9,9 +9,11 @@ import type {
   SSEDelta,
   SSETimings,
   SwarmMetrics,
+  RpcTelemetryDetail,
 } from "../types/api";
 
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import { supervisor } from "./supervisor";
 
 export const isTauri =
   typeof window !== "undefined" &&
@@ -30,6 +32,25 @@ async function appFetch(input: RequestInfo | URL, init?: RequestInit): Promise<R
     }
   }
   return window.fetch(input, init);
+}
+
+let telemetryTokenPromise: Promise<string | null> | null = null;
+
+/**
+ * The desktop supervisor provisions a shared telemetry bearer token for the
+ * coordinator. The detail endpoint is protected by it, so fetch the token once
+ * per session and reuse it. Browser/dev mode has no supervisor and therefore no
+ * token (the dev coordinator runs unauthenticated on loopback).
+ */
+function getTelemetryToken(): Promise<string | null> {
+  if (!isTauri) return Promise.resolve(null);
+  if (!telemetryTokenPromise) {
+    telemetryTokenPromise = supervisor
+      .getHostNetworkInfo()
+      .then((info) => info?.telemetry_token ?? null)
+      .catch(() => null);
+  }
+  return telemetryTokenPromise;
 }
 
 function parsePrometheus(text: string): SwarmMetrics {
@@ -86,6 +107,23 @@ export const api = {
     const text = await res.text();
     return parsePrometheus(text);
   },
+  rpcTelemetry: async (
+    requestId: number,
+    signal?: AbortSignal,
+  ): Promise<RpcTelemetryDetail> => {
+    const token = await getTelemetryToken();
+    const res = await appFetch(
+      `${BASE_URL}/telemetry/request?id=${encodeURIComponent(String(requestId))}`,
+      {
+        signal,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      },
+    );
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} on /telemetry/request`);
+    }
+    return res.json() as Promise<RpcTelemetryDetail>;
+  },
 
   /** Stream a chat completion. Calls onDelta for each content chunk, onTimings once at the end. */
   chat: async (
@@ -130,7 +168,15 @@ export const api = {
           const payload = trimmed.slice(5).trim();
           if (payload === "[DONE]") continue;
           try {
-            const parsed = JSON.parse(payload) as SSEDelta | SSETimings;
+            const parsed = JSON.parse(payload) as
+              | SSEDelta
+              | SSETimings
+              | { error?: string };
+            if ("error" in parsed && typeof parsed.error === "string") {
+              onError(parsed.error);
+              void reader.cancel().catch(() => {});
+              return;
+            }
             if ("timings" in parsed) {
               onTimings((parsed as SSETimings).timings);
             } else {

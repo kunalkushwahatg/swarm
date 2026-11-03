@@ -1,10 +1,15 @@
 # AI agent handoff
 
-The nine project documents are the root
-[README.md](../README.md) plus these eight documents under `docs/`. Read this
-handoff and [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) before editing source.
-Treat fresh source inspection and runtime checks as authoritative if this
-handoff becomes stale.
+This document provides essential operational context, baseline hashes, and verification procedures.
+Treat fresh source inspection and runtime checks as authoritative if this handoff becomes stale.
+
+## System Environment
+
+- **Operating System:** Windows development host (Windows 10/11 x64).
+- **Toolchain:** Visual Studio 2022 Build Tools (MSVC v143), CMake (v3.14+), NMake Makefiles.
+- **Hardware Acceleration:** NVIDIA GeForce GTX 1050 (Compute Capability 6.1, ~4 GiB VRAM).
+- **Core Engine:** Bundled `llama.cpp/` providing GGML tensor library, CUDA kernels, and GGML RPC v7.
+- **Active Build Config:** CMake flags `-DGGML_CUDA=ON -DGGML_RPC=ON -DCMAKE_CUDA_ARCHITECTURES=61 -DCMAKE_BUILD_TYPE=Release`.
 
 ## Validated baseline
 
@@ -45,10 +50,10 @@ test_dynamic_policy.exe
 
 models/qwen2.5-3b-instruct-q4_k_m.official-check.gguf
 626B4A6678B86442240E33DF819E00132D3BA7DDDFE1CDC4FBB18E0A9615C62D
-
-models/qwen2.5-3b-instruct-q4_k_m.gguf
-B7AA5CE06C2B483A582B81CFC6EF3C379DE3D341BD1C30B69B60396786526A82
 ```
+
+> [!NOTE]
+> `models/qwen2.5-3b-instruct-q4_k_m.official-check.gguf` is the sole canonical baseline model asset. The previously retained unverified model artifact `qwen2.5-3b-instruct-q4_k_m.gguf` (`B7AA5CE0...`) and unreferenced `llama-3-8b.gguf` were removed during workspace decluttering.
 
 ## RPC status
 

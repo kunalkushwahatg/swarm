@@ -4,8 +4,99 @@
 #include <string>
 #include <vector>
 #include <cstdlib>
+#include <cstdint>
+#include <cctype>
 #include <optional>
 #include <fstream>
+
+namespace swarm_config_parse {
+
+inline std::string trim_copy(const std::string& value) {
+    const size_t begin = value.find_first_not_of(" \t\r\n");
+    if (begin == std::string::npos) {
+        return "";
+    }
+    const size_t end = value.find_last_not_of(" \t\r\n");
+    return value.substr(begin, end - begin + 1);
+}
+
+inline bool parse_bool(const char* raw, bool& out) {
+    if (!raw) {
+        return false;
+    }
+    std::string value = trim_copy(raw);
+    for (char& c : value) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    if (value == "1" || value == "true" || value == "yes" || value == "on") {
+        out = true;
+        return true;
+    }
+    if (value == "0" || value == "false" || value == "no" || value == "off") {
+        out = false;
+        return true;
+    }
+    return false;
+}
+
+inline bool parse_i64(const char* raw, long long& out) {
+    if (!raw) {
+        return false;
+    }
+    const std::string value = trim_copy(raw);
+    if (value.empty()) {
+        return false;
+    }
+    try {
+        size_t consumed = 0;
+        const long long parsed = std::stoll(value, &consumed);
+        if (consumed != value.size()) {
+            return false;
+        }
+        out = parsed;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+inline bool parse_u16(const char* raw, uint16_t& out) {
+    long long value = 0;
+    if (!parse_i64(raw, value) || value <= 0 || value > 65535) {
+        return false;
+    }
+    out = static_cast<uint16_t>(value);
+    return true;
+}
+
+inline bool parse_u32(const char* raw, uint32_t& out) {
+    long long value = 0;
+    if (!parse_i64(raw, value) || value < 0 || value > 0xFFFFFFFFLL) {
+        return false;
+    }
+    out = static_cast<uint32_t>(value);
+    return true;
+}
+
+inline bool parse_u64(const char* raw, uint64_t& out) {
+    long long value = 0;
+    if (!parse_i64(raw, value) || value < 0) {
+        return false;
+    }
+    out = static_cast<uint64_t>(value);
+    return true;
+}
+
+inline bool parse_i32(const char* raw, int32_t& out) {
+    long long value = 0;
+    if (!parse_i64(raw, value) || value < -2147483647LL - 1 || value > 2147483647LL) {
+        return false;
+    }
+    out = static_cast<int32_t>(value);
+    return true;
+}
+
+} // namespace swarm_config_parse
 
 // Forward declaration
 struct WorkerConfig;
@@ -111,16 +202,18 @@ static SwarmConfig load_config_from_env() {
 
     // HTTP port
     if (const char* env_http_port = std::getenv("SWARM_HTTP_PORT")) {
-        try {
-            config.http_port = static_cast<uint16_t>(std::stoi(env_http_port));
-        } catch (...) {
-            // Keep default if invalid
+        uint16_t parsed = 0;
+        if (swarm_config_parse::parse_u16(env_http_port, parsed)) {
+            config.http_port = parsed;
         }
     }
 
     // RPC enabled (backward compatibility)
     if (const char* env_use_rpc = std::getenv("SWARM_USE_RPC")) {
-        config.rpc_enabled = (std::string(env_use_rpc) != "0");
+        bool parsed = false;
+        if (swarm_config_parse::parse_bool(env_use_rpc, parsed)) {
+            config.rpc_enabled = parsed;
+        }
     }
 
     // RPC endpoint (backward compatibility)
@@ -151,25 +244,26 @@ static SwarmConfig load_config_from_env() {
 
     // Context size
     if (const char* env_ctx_size = std::getenv("SWARM_CTX_SIZE")) {
-        try {
-            config.ctx_size = std::stoi(env_ctx_size);
-        } catch (...) {
-            // Keep default if invalid
+        int32_t parsed = 0;
+        if (swarm_config_parse::parse_i32(env_ctx_size, parsed) && parsed > 0) {
+            config.ctx_size = parsed;
         }
     }
 
     // Default max tokens
     if (const char* env_max_tokens = std::getenv("SWARM_MAX_TOKENS_DEFAULT")) {
-        try {
-            config.max_tokens_default = std::stoi(env_max_tokens);
-        } catch (...) {
-            // Keep default if invalid
+        int32_t parsed = 0;
+        if (swarm_config_parse::parse_i32(env_max_tokens, parsed) && parsed > 0) {
+            config.max_tokens_default = parsed;
         }
     }
 
     // Log timestamps
     if (const char* env_log_timestamps = std::getenv("SWARM_LOG_TIMESTAMPS")) {
-        config.log_timestamps = (std::string(env_log_timestamps) != "0");
+        bool parsed = false;
+        if (swarm_config_parse::parse_bool(env_log_timestamps, parsed)) {
+            config.log_timestamps = parsed;
+        }
     }
 
     // Placement policy
@@ -184,16 +278,18 @@ static SwarmConfig load_config_from_env() {
 
     // Dynamic placement headroom (RAM)
     if (const char* env_ram_hr = std::getenv("SWARM_RESERVED_HEADROOM_RAM_MB")) {
-        try {
-            config.headroom_ram_mb = std::stoull(env_ram_hr);
-        } catch (...) {}
+        uint64_t parsed = 0;
+        if (swarm_config_parse::parse_u64(env_ram_hr, parsed)) {
+            config.headroom_ram_mb = parsed;
+        }
     }
 
     // Dynamic placement headroom (VRAM)
     if (const char* env_vram_hr = std::getenv("SWARM_RESERVED_HEADROOM_VRAM_MB")) {
-        try {
-            config.headroom_vram_mb = std::stoull(env_vram_hr);
-        } catch (...) {}
+        uint64_t parsed = 0;
+        if (swarm_config_parse::parse_u64(env_vram_hr, parsed)) {
+            config.headroom_vram_mb = parsed;
+        }
     }
 
     // Agent report file for offline/deterministic fixtures
@@ -203,9 +299,10 @@ static SwarmConfig load_config_from_env() {
 
     // Discovery timeout for dynamic placement intake
     if (const char* env_disc_to = std::getenv("SWARM_DISCOVERY_TIMEOUT_MS")) {
-        try {
-            config.discovery_timeout_ms = static_cast<uint32_t>(std::stoul(env_disc_to));
-        } catch (...) {}
+        uint32_t parsed = 0;
+        if (swarm_config_parse::parse_u32(env_disc_to, parsed)) {
+            config.discovery_timeout_ms = parsed;
+        }
     }
 
     // Deployment environment (Milestone 11)
@@ -242,37 +339,33 @@ static SwarmConfig load_config_from_env() {
 
     // Max local workers
     if (const char* env_max_local_workers = std::getenv("SWARM_MAX_LOCAL_WORKERS")) {
-        try {
-            config.max_local_workers = std::stoi(env_max_local_workers);
-        } catch (...) {
-            // Keep default if invalid
+        uint32_t parsed = 0;
+        if (swarm_config_parse::parse_u32(env_max_local_workers, parsed)) {
+            config.max_local_workers = parsed;
         }
     }
 
     // Worker startup timeout
     if (const char* env_worker_startup_timeout = std::getenv("SWARM_WORKER_STARTUP_TIMEOUT_S")) {
-        try {
-            config.worker_startup_timeout_s = std::stoi(env_worker_startup_timeout);
-        } catch (...) {
-            // Keep default if invalid
+        uint32_t parsed = 0;
+        if (swarm_config_parse::parse_u32(env_worker_startup_timeout, parsed)) {
+            config.worker_startup_timeout_s = parsed;
         }
     }
 
     // Worker health check interval
     if (const char* env_worker_health_check_interval = std::getenv("SWARM_WORKER_HEALTH_CHECK_INTERVAL_S")) {
-        try {
-            config.worker_health_check_interval_s = std::stoi(env_worker_health_check_interval);
-        } catch (...) {
-            // Keep default if invalid
+        uint32_t parsed = 0;
+        if (swarm_config_parse::parse_u32(env_worker_health_check_interval, parsed)) {
+            config.worker_health_check_interval_s = parsed;
         }
     }
 
     // Worker connection timeout
     if (const char* env_worker_connection_timeout = std::getenv("SWARM_WORKER_CONNECTION_TIMEOUT_S")) {
-        try {
-            config.worker_connection_timeout_s = std::stoi(env_worker_connection_timeout);
-        } catch (...) {
-            // Keep default if invalid
+        uint32_t parsed = 0;
+        if (swarm_config_parse::parse_u32(env_worker_connection_timeout, parsed)) {
+            config.worker_connection_timeout_s = parsed;
         }
     }
 
@@ -285,7 +378,7 @@ static SwarmConfig load_config_from_env() {
     else {
         // Load individual worker configurations (up to max_local_workers)
         for (uint32_t i = 0; i < config.max_local_workers; ++i) {
-            char id_env[64], host_env[64], port_env[16], enabled_env[16], cache_dir_env[256];
+            char id_env[64], host_env[64], port_env[64], enabled_env[64], cache_dir_env[256];
 
             snprintf(id_env, sizeof(id_env), "SWARM_WORKER_%u_ID", i);
             snprintf(host_env, sizeof(host_env), "SWARM_WORKER_%u_HOST", i);
@@ -312,18 +405,22 @@ static SwarmConfig load_config_from_env() {
 
             // Port
             if (const char* env_port = std::getenv(port_env)) {
-                try {
-                    worker.port = static_cast<uint16_t>(std::stoi(env_port));
-                } catch (...) {
-                    worker.port = 50052 + i; // Default port with offset
+                uint16_t parsed_port = 0;
+                if (swarm_config_parse::parse_u16(env_port, parsed_port)) {
+                    worker.port = parsed_port;
+                } else {
+                    worker.port = static_cast<uint16_t>(50052 + i); // Default port with offset
                 }
             } else {
-                worker.port = 50052 + i; // Default port with offset
+                worker.port = static_cast<uint16_t>(50052 + i); // Default port with offset
             }
 
             // Enabled
             if (const char* env_enabled = std::getenv(enabled_env)) {
-                worker.enabled = (std::string(env_enabled) != "0");
+                bool parsed_enabled = false;
+                if (swarm_config_parse::parse_bool(env_enabled, parsed_enabled)) {
+                    worker.enabled = parsed_enabled;
+                }
             } else {
                 // Default: first worker enabled, others disabled
                 worker.enabled = (i == 0);
@@ -353,14 +450,9 @@ static SwarmConfig load_config_from_env() {
         if (colon_pos != std::string::npos) {
             const std::string port_text = endpoint_worker.host.substr(colon_pos + 1);
             endpoint_worker.host = endpoint_worker.host.substr(0, colon_pos);
-            try {
-                const int port = std::stoi(port_text);
-                if (port > 0 && port <= 65535) {
-                    endpoint_worker.port = static_cast<uint16_t>(port);
-                }
-            } catch (...) {
-                endpoint_worker.port = 0;
-            }
+            uint16_t parsed_port = 0;
+            endpoint_worker.port =
+                swarm_config_parse::parse_u16(port_text.c_str(), parsed_port) ? parsed_port : 0;
         }
         endpoint_worker.enabled = true;
         endpoint_worker.cache_dir = "./worker_cache_" + endpoint_worker.id;
@@ -378,11 +470,10 @@ static SwarmConfig load_config_from_env() {
         size_t colon_pos = config.rpc_endpoint.find(':');
         if (colon_pos != std::string::npos) {
             legacy_worker.host = config.rpc_endpoint.substr(0, colon_pos);
-            try {
-                legacy_worker.port = std::stoi(config.rpc_endpoint.substr(colon_pos + 1));
-            } catch (...) {
-                legacy_worker.port = 50052;
-            }
+            const std::string port_text = config.rpc_endpoint.substr(colon_pos + 1);
+            uint16_t parsed_port = 0;
+            legacy_worker.port =
+                swarm_config_parse::parse_u16(port_text.c_str(), parsed_port) ? parsed_port : 50052;
         } else {
             legacy_worker.host = config.rpc_endpoint;
             legacy_worker.port = 50052;

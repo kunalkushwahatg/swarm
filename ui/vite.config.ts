@@ -19,6 +19,7 @@ export default defineConfig({
       '/metrics': 'http://127.0.0.1:8080',
       '/v1': 'http://127.0.0.1:8080',
       '/api': 'http://127.0.0.1:8080',
+      '/telemetry': 'http://127.0.0.1:8080',
     },
   },
 })

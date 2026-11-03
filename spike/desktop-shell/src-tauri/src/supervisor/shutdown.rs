@@ -97,10 +97,15 @@ pub fn shutdown_managed_child(
         let child = map.get_mut(&pid).ok_or(ShutdownError::ProcessNotManaged(pid))?;
 
         if let ProcessStatus::Exited { exit_code } = child.refresh_status() {
+            let exit_code = *exit_code;
+            // The process is already gone; drop its handles/map entry now
+            // instead of retaining every stopped worker for the process
+            // lifetime.
+            map.remove(&pid);
             return Ok(ShutdownResult {
                 pid,
                 graceful_exit: true,
-                exit_code: Some(*exit_code),
+                exit_code: Some(exit_code),
                 forced_termination: false,
                 duration_ms: 0,
                 ports_released: true,
@@ -182,6 +187,14 @@ pub fn shutdown_managed_child(
         } else {
             log::info!("[Shutdown] Port {} successfully verified in LISTEN-free state.", port);
         }
+    }
+
+    // The child has exited (or was forcibly terminated). Remove the map entry
+    // so handles are closed and stale PIDs do not accumulate for the lifetime
+    // of the supervisor.
+    {
+        let mut map = managed_children.lock().unwrap();
+        map.remove(&pid);
     }
 
     Ok(ShutdownResult {
