@@ -26,11 +26,10 @@ import {
   ChevronUp,
   X,
   Wifi,
-  Zap,
   Cpu,
   Server,
-  Thermometer,
   Radar,
+  ShieldCheck,
 } from "lucide-react";
 import { ComputeAllocationModal } from "./ComputeAllocationModal";
 import { DeviceOnboardingModal } from "./devices/DeviceOnboardingModal";
@@ -892,26 +891,22 @@ export function DevicesPanel() {
                   )}
                 </div>
 
-                {/* Mobile Operational Advisory for Remote Helpers */}
+                {/* Mobile Transport Tag */}
                 {isRemote && (
                   <div
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 6,
+                      gap: 5,
                       fontSize: 11,
-                      color: "var(--color-text-2)",
-                      background: "var(--color-surface-subtle)",
-                      padding: "5px 10px",
-                      borderRadius: "var(--radius-sm)",
-                      border: "1px solid var(--color-border)",
+                      color: "var(--color-text-3)",
                     }}
                   >
-                    <Zap size={12} style={{ color: "var(--color-warn)", flexShrink: 0 }} />
+                    <ShieldCheck size={12} color="var(--color-ok)" />
                     <span>
                       {probeFeedback?.link_type?.includes("Internet") || probeFeedback?.link_type?.includes("QUIC")
-                        ? "Operating over cellular/internet. Performance depends on mobile signal."
-                        : "Connect device to power to prevent background sleep."}
+                        ? "Encrypted Cellular Tunnel"
+                        : "Direct Local Network"}
                     </span>
                   </div>
                 )}
@@ -1422,29 +1417,28 @@ export function DevicesPanel() {
                 </div>
               )}
 
-              {/* Section 4: Mobile Thermal & Power Safeguard Advisory */}
+              {/* Mobile Status Indicators */}
               {isRemote && (
                 <div
                   style={{
-                    background: "var(--color-surface-subtle)",
-                    padding: "10px 14px",
-                    borderRadius: "var(--radius-sm)",
-                    border: "1px solid var(--color-border)",
                     display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
-                    fontSize: 11.5,
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 11,
+                    color: "var(--color-text-3)",
+                    paddingTop: 4,
                   }}
                 >
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-warn)", display: "flex", alignItems: "center", gap: 5 }}>
-                    <Thermometer size={12} />
-                    <span>Mobile Operational Safeguards</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <ShieldCheck size={12} color="var(--color-ok)" />
+                    <span>Encrypted peer link</span>
                   </span>
-                  <div style={{ color: "var(--color-text-2)", lineHeight: 1.45, fontSize: 11 }}>
-                    <div>• <strong>Thermal Throttling:</strong> Keep mobile devices ventilated during extended multi-token sessions.</div>
-                    <div>• <strong>Battery Guard:</strong> Connect to charger to prevent background sleep and CPU governor throttling.</div>
-                    <div>• <strong>Connection Tip:</strong> {probe?.link_type?.includes("Internet") || probe?.link_type?.includes("QUIC") ? "Using internet tunnel. Maintain solid cellular reception for lowest jitter." : "Using local network. 5 GHz Wi-Fi or USB tethering minimizes latency jitter."}</div>
-                  </div>
+                  <span>·</span>
+                  <span>
+                    {probe?.link_type?.includes("Internet") || probe?.link_type?.includes("QUIC")
+                      ? "Cellular / Internet tunnel"
+                      : "Direct Wi-Fi socket"}
+                  </span>
                 </div>
               )}
 
