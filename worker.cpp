@@ -22,6 +22,7 @@
 #else
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <signal.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -437,16 +438,22 @@ bool WorkerManager::start_local_workers() {
                 success = false;
             }
 #else
-            // For non-Windows platforms, we'd use fork/exec
-            // This is a simplified version - in reality we'd need to handle this properly
-            std::string cmd_str = cmd.str();
-            int result = system(cmd_str.c_str());
-            if (result == 0) {
-                // Process started successfully (in background)
+            pid_t pid = fork();
+            if (pid == 0) {
+                // Child process: execute worker binary directly with vector args
+                std::string port_str = std::to_string(worker.port);
+                execlp("ggml-rpc-server", "ggml-rpc-server",
+                       "--host", worker.host.c_str(),
+                       "--port", port_str.c_str(),
+                       "--cache", (char*)nullptr);
+                _exit(127);
+            } else if (pid > 0) {
+                worker_processes_.push_back(pid);
+                worker.pid = pid;
                 worker.state = WorkerState::STARTING;
             } else {
                 worker.state = WorkerState::FAILED;
-                worker.last_error = "Failed to start process";
+                worker.last_error = "Failed to fork worker process";
                 std::cerr << "Failed to start worker '" << worker.id << "': " << worker.last_error << std::endl;
                 success = false;
             }
@@ -473,7 +480,18 @@ void WorkerManager::stop_local_workers() {
     }
     worker_processes_.clear();
 #else
-    // For non-Windows, we'd send SIGTERM and wait
+    for (pid_t pid : worker_processes_) {
+        if (pid > 0) {
+            kill(pid, SIGTERM);
+        }
+    }
+    for (pid_t pid : worker_processes_) {
+        if (pid > 0) {
+            int status = 0;
+            waitpid(pid, &status, 0);
+        }
+    }
+    worker_processes_.clear();
 #endif
 
     // Update worker states

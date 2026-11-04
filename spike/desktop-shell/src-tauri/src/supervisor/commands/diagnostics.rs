@@ -183,6 +183,13 @@ pub fn generate_diagnostics_report(root: &std::path::Path, manager: &ProcessMana
 /// without modifying host files, killing processes, or disturbing the live environment.
 #[tauri::command]
 pub fn supervisor_get_diagnostic_fixture(fixture_name: String) -> Result<SupervisorDiagnosticsReport, String> {
+    let workspace_root = std::env::var("SWARM_WORKSPACE_ROOT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+        });
+    let root = workspace_root.to_string_lossy();
+
     match fixture_name.as_str() {
         "supervisor_unavailable" => Ok(SupervisorDiagnosticsReport {
             supervisor_initialized: false,
@@ -204,19 +211,19 @@ pub fn supervisor_get_diagnostic_fixture(fixture_name: String) -> Result<Supervi
             },
             coordinator_executable: ExecutableCheck {
                 name: "swarm_node.exe".to_string(),
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\build-cuda\swarm_node.exe".to_string(),
+                path: format!(r"{}\build-cuda\swarm_node.exe", root),
                 exists: true,
                 is_file: true,
             },
             rpc_executable: ExecutableCheck {
                 name: "ggml-rpc-server.exe".to_string(),
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\dist\swarm-worker-windows-x64\ggml-rpc-server.exe".to_string(),
+                path: format!(r"{}\dist\swarm-worker-windows-x64\ggml-rpc-server.exe", root),
                 exists: true,
                 is_file: true,
             },
             dll_directories: vec![],
             model_file: ModelFileCheck {
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\models\qwen2.5-3b-instruct-q4_k_m.official-check.gguf".to_string(),
+                path: format!(r"{}\models\qwen2.5-3b-instruct-q4_k_m.official-check.gguf", root),
                 exists: true,
                 is_file: true,
                 extension_valid: true,
@@ -274,19 +281,19 @@ pub fn supervisor_get_diagnostic_fixture(fixture_name: String) -> Result<Supervi
             },
             coordinator_executable: ExecutableCheck {
                 name: "swarm_node.exe".to_string(),
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\build-cuda\swarm_node.exe".to_string(),
+                path: format!(r"{}\build-cuda\swarm_node.exe", root),
                 exists: true,
                 is_file: true,
             },
             rpc_executable: ExecutableCheck {
                 name: "ggml-rpc-server.exe".to_string(),
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\dist\swarm-worker-windows-x64\ggml-rpc-server.exe".to_string(),
+                path: format!(r"{}\dist\swarm-worker-windows-x64\ggml-rpc-server.exe", root),
                 exists: true,
                 is_file: true,
             },
             dll_directories: vec![],
             model_file: ModelFileCheck {
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\models\qwen2.5-3b-instruct-q4_k_m.official-check.gguf".to_string(),
+                path: format!(r"{}\models\qwen2.5-3b-instruct-q4_k_m.official-check.gguf", root),
                 exists: true,
                 is_file: true,
                 extension_valid: true,
@@ -337,19 +344,19 @@ pub fn supervisor_get_diagnostic_fixture(fixture_name: String) -> Result<Supervi
             },
             coordinator_executable: ExecutableCheck {
                 name: "swarm_node.exe".to_string(),
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\build-cuda\swarm_node.exe".to_string(),
+                path: format!(r"{}\build-cuda\swarm_node.exe", root),
                 exists: true,
                 is_file: true,
             },
             rpc_executable: ExecutableCheck {
                 name: "ggml-rpc-server.exe".to_string(),
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\dist\swarm-worker-windows-x64\ggml-rpc-server.exe".to_string(),
+                path: format!(r"{}\dist\swarm-worker-windows-x64\ggml-rpc-server.exe", root),
                 exists: true,
                 is_file: true,
             },
             dll_directories: vec![],
             model_file: ModelFileCheck {
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\models\qwen2.5-3b-instruct-q4_k_m.official-check.gguf".to_string(),
+                path: format!(r"{}\models\qwen2.5-3b-instruct-q4_k_m.official-check.gguf", root),
                 exists: true,
                 is_file: true,
                 extension_valid: true,
@@ -400,30 +407,30 @@ pub fn supervisor_get_diagnostic_fixture(fixture_name: String) -> Result<Supervi
             },
             coordinator_executable: ExecutableCheck {
                 name: "swarm_node.exe".to_string(),
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\build-cuda\swarm_node.exe".to_string(),
+                path: format!(r"{}\build-cuda\swarm_node.exe", root),
                 exists: false,
                 is_file: false,
             },
             rpc_executable: ExecutableCheck {
                 name: "ggml-rpc-server.exe".to_string(),
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\dist\swarm-worker-windows-x64\ggml-rpc-server.exe".to_string(),
+                path: format!(r"{}\dist\swarm-worker-windows-x64\ggml-rpc-server.exe", root),
                 exists: false,
                 is_file: false,
             },
             dll_directories: vec![
                 DllDirectoryCheck {
-                    path: r"C:\Users\kunal\OneDrive\Desktop\swarm\build-cuda".to_string(),
+                    path: format!(r"{}\build-cuda", root),
                     exists: true,
                     is_directory: true,
                 },
                 DllDirectoryCheck {
-                    path: r"C:\Users\kunal\OneDrive\Desktop\swarm\build-cuda\bin".to_string(),
+                    path: format!(r"{}\build-cuda\bin", root),
                     exists: false,
                     is_directory: false,
                 },
             ],
             model_file: ModelFileCheck {
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\models\qwen2.5-3b-instruct-q4_k_m.official-check.gguf".to_string(),
+                path: format!(r"{}\models\qwen2.5-3b-instruct-q4_k_m.official-check.gguf", root),
                 exists: true,
                 is_file: true,
                 extension_valid: true,
@@ -477,19 +484,19 @@ pub fn supervisor_get_diagnostic_fixture(fixture_name: String) -> Result<Supervi
             },
             coordinator_executable: ExecutableCheck {
                 name: "swarm_node.exe".to_string(),
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\build-cuda\swarm_node.exe".to_string(),
+                path: format!(r"{}\build-cuda\swarm_node.exe", root),
                 exists: true,
                 is_file: true,
             },
             rpc_executable: ExecutableCheck {
                 name: "ggml-rpc-server.exe".to_string(),
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\dist\swarm-worker-windows-x64\ggml-rpc-server.exe".to_string(),
+                path: format!(r"{}\dist\swarm-worker-windows-x64\ggml-rpc-server.exe", root),
                 exists: true,
                 is_file: true,
             },
             dll_directories: vec![],
             model_file: ModelFileCheck {
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\models\missing_model.gguf".to_string(),
+                path: format!(r"{}\models\missing_model.gguf", root),
                 exists: false,
                 is_file: false,
                 extension_valid: true,
@@ -540,19 +547,19 @@ pub fn supervisor_get_diagnostic_fixture(fixture_name: String) -> Result<Supervi
             },
             coordinator_executable: ExecutableCheck {
                 name: "swarm_node.exe".to_string(),
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\build-cuda\swarm_node.exe".to_string(),
+                path: format!(r"{}\build-cuda\swarm_node.exe", root),
                 exists: true,
                 is_file: true,
             },
             rpc_executable: ExecutableCheck {
                 name: "ggml-rpc-server.exe".to_string(),
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\dist\swarm-worker-windows-x64\ggml-rpc-server.exe".to_string(),
+                path: format!(r"{}\dist\swarm-worker-windows-x64\ggml-rpc-server.exe", root),
                 exists: true,
                 is_file: true,
             },
             dll_directories: vec![],
             model_file: ModelFileCheck {
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\models\model.invalid_ext".to_string(),
+                path: format!(r"{}\models\model.invalid_ext", root),
                 exists: true,
                 is_file: true,
                 extension_valid: false,
@@ -670,30 +677,30 @@ pub fn supervisor_get_diagnostic_fixture(fixture_name: String) -> Result<Supervi
             },
             coordinator_executable: ExecutableCheck {
                 name: "swarm_node.exe".to_string(),
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\build-cuda\swarm_node.exe".to_string(),
+                path: format!(r"{}\build-cuda\swarm_node.exe", root),
                 exists: true,
                 is_file: true,
             },
             rpc_executable: ExecutableCheck {
                 name: "ggml-rpc-server.exe".to_string(),
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\dist\swarm-worker-windows-x64\ggml-rpc-server.exe".to_string(),
+                path: format!(r"{}\dist\swarm-worker-windows-x64\ggml-rpc-server.exe", root),
                 exists: true,
                 is_file: true,
             },
             dll_directories: vec![
                 DllDirectoryCheck {
-                    path: r"C:\Users\kunal\OneDrive\Desktop\swarm\build-cuda".to_string(),
+                    path: format!(r"{}\build-cuda", root),
                     exists: true,
                     is_directory: true,
                 },
                 DllDirectoryCheck {
-                    path: r"C:\Users\kunal\OneDrive\Desktop\swarm\build-cuda\bin".to_string(),
+                    path: format!(r"{}\build-cuda\bin", root),
                     exists: true,
                     is_directory: true,
                 },
             ],
             model_file: ModelFileCheck {
-                path: r"C:\Users\kunal\OneDrive\Desktop\swarm\models\qwen2.5-3b-instruct-q4_k_m.official-check.gguf".to_string(),
+                path: format!(r"{}\models\qwen2.5-3b-instruct-q4_k_m.official-check.gguf", root),
                 exists: true,
                 is_file: true,
                 extension_valid: true,

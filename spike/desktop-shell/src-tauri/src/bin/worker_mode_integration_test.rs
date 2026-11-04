@@ -29,7 +29,14 @@ fn find_workspace_root() -> PathBuf {
         }
         curr = parent;
     }
-    PathBuf::from(r"C:\Users\kunal\OneDrive\Desktop\swarm")
+    std::env::var("SWARM_WORKSPACE_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::current_dir()
+                .ok()
+                .and_then(|cwd| cwd.ancestors().find(|p| p.join("dist").exists() && p.join("models").exists()).map(|p| p.to_path_buf()))
+                .unwrap_or_else(|| PathBuf::from("."))
+        })
 }
 
 fn query_http(port: u16, method: &str, path: &str, body: Option<&str>, timeout: Duration) -> Result<(u16, String), String> {

@@ -16,7 +16,8 @@ if (-not $isAdmin) {
     exit 1
 }
 
-$targetExe = "C:\Users\kunal\OneDrive\Desktop\swarm\build-cuda\swarm_node.exe"
+$WorkspaceRoot = (Resolve-Path "$PSScriptRoot\..").Path
+$targetExe = Join-Path $WorkspaceRoot "build-cuda\swarm_node.exe"
 Write-Host "`n[Step 1] Inspecting existing application rules for:" -ForegroundColor Yellow
 Write-Host "  $targetExe" -ForegroundColor White
 

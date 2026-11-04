@@ -141,7 +141,14 @@ fn query_chat_completion_sse(
 }
 
 fn main() {
-    let workspace_root = PathBuf::from(r"C:\Users\kunal\OneDrive\Desktop\swarm");
+    let workspace_root = std::env::var("SWARM_WORKSPACE_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::current_dir()
+                .ok()
+                .and_then(|cwd| cwd.ancestors().find(|p| p.join("models").exists()).map(|p| p.to_path_buf()))
+                .unwrap_or_else(|| PathBuf::from("."))
+        });
     let result_file = workspace_root.join(r"spike\desktop-shell\phase_c36_standalone_cuda_result.json");
     let start_timestamp = format!("{:?}", std::time::SystemTime::now());
 

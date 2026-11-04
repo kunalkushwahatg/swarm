@@ -3,7 +3,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$false)]
-    [string]$CoordinatorUrl = "http://192.168.204.41:8080",
+    [string]$CoordinatorUrl = "http://127.0.0.1:8080",
 
     [Parameter(Mandatory=$false)]
     [string]$ListenHost = "0.0.0.0",

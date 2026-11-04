@@ -4,7 +4,14 @@ use app_lib::supervisor::commands::{run_preflight_check, evaluate_standalone_res
 use app_lib::supervisor::config::CoordinatorConfig;
 
 fn main() {
-    let workspace_root = PathBuf::from(r"C:\Users\kunal\OneDrive\Desktop\swarm");
+    let workspace_root = std::env::var("SWARM_WORKSPACE_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::current_dir()
+                .ok()
+                .and_then(|cwd| cwd.ancestors().find(|p| p.join("models").exists()).map(|p| p.to_path_buf()))
+                .unwrap_or_else(|| PathBuf::from("."))
+        });
     println!("=== SUPERVISOR STANDALONE PREFLIGHT PROBE ===");
 
     let mem_info = get_available_physical_memory();

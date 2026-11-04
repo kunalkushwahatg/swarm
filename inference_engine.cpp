@@ -205,11 +205,15 @@ void InferenceEngine::handle_chat_completion(
         return;
     }
 
+    const int max_tokens_limit = config.ctx_size > 0 ? config.ctx_size : 4096;
     const int max_tokens = request_json.value("max_tokens", config.max_tokens_default);
-    if (max_tokens < 1 || max_tokens > 512) {
+    if (max_tokens < 1 || max_tokens > max_tokens_limit) {
         log_warn("[" + std::to_string(request_id) + "] Invalid max_tokens: " + std::to_string(max_tokens));
         res.status = 400;
-        res.set_content(R"({"error":"max_tokens must be 1..512"})", "application/json");
+        json err = {
+            {"error", "max_tokens must be between 1 and " + std::to_string(max_tokens_limit)}
+        };
+        res.set_content(err.dump(), "application/json");
         return;
     }
 

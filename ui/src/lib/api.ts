@@ -19,6 +19,15 @@ export const isTauri =
   typeof window !== "undefined" &&
   ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
 
+let activeCoordinatorPort = 8080;
+
+export function getBaseUrl(): string {
+  if (import.meta.env.VITE_SWARM_API_URL) {
+    return import.meta.env.VITE_SWARM_API_URL;
+  }
+  return isTauri ? `http://127.0.0.1:${activeCoordinatorPort}` : "";
+}
+
 export const BASE_URL =
   import.meta.env.VITE_SWARM_API_URL ??
   (isTauri ? "http://127.0.0.1:8080" : "");
@@ -47,7 +56,12 @@ function getTelemetryToken(): Promise<string | null> {
   if (!telemetryTokenPromise) {
     telemetryTokenPromise = supervisor
       .getHostNetworkInfo()
-      .then((info) => info?.telemetry_token ?? null)
+      .then((info) => {
+        if (info?.coordinator_port) {
+          activeCoordinatorPort = info.coordinator_port;
+        }
+        return info?.telemetry_token ?? null;
+      })
       .catch(() => null);
   }
   return telemetryTokenPromise;
@@ -92,7 +106,7 @@ function parsePrometheus(text: string): SwarmMetrics {
 }
 
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await appFetch(`${BASE_URL}${path}`, { signal });
+  const res = await appFetch(`${getBaseUrl()}${path}`, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
   return res.json() as Promise<T>;
 }
@@ -102,7 +116,7 @@ export const api = {
   backends: (signal?: AbortSignal) => get<BackendsResponse>("/backends", signal),
   nodes: (signal?: AbortSignal) => get<NodeInventory>("/nodes", signal),
   metrics: async (signal?: AbortSignal): Promise<SwarmMetrics> => {
-    const res = await appFetch(`${BASE_URL}/metrics`, { signal });
+    const res = await appFetch(`${getBaseUrl()}/metrics`, { signal });
     if (!res.ok) throw new Error(`HTTP ${res.status} on /metrics`);
     const text = await res.text();
     return parsePrometheus(text);
@@ -113,7 +127,7 @@ export const api = {
   ): Promise<RpcTelemetryDetail> => {
     const token = await getTelemetryToken();
     const res = await appFetch(
-      `${BASE_URL}/telemetry/request?id=${encodeURIComponent(String(requestId))}`,
+      `${getBaseUrl()}/telemetry/request?id=${encodeURIComponent(String(requestId))}`,
       {
         signal,
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -133,7 +147,7 @@ export const api = {
     onError: (msg: string) => void,
     signal?: AbortSignal,
   ): Promise<void> => {
-    const res = await appFetch(`${BASE_URL}/v1/chat/completions`, {
+    const res = await appFetch(`${getBaseUrl()}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),

@@ -3,7 +3,26 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 set "SWARM_DIR=%~dp0."
 set "BUILD_DIR=%SWARM_DIR%build-cuda"
-set "VCVARS=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+
+:: Dynamically locate Visual Studio installation using vswhere
+set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+set "VCVARS="
+if exist "%VSWHERE%" (
+    for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
+        if exist "%%i\VC\Auxiliary\Build\vcvars64.bat" (
+            set "VCVARS=%%i\VC\Auxiliary\Build\vcvars64.bat"
+        )
+    )
+)
+if not defined VCVARS (
+    if exist "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" (
+        set "VCVARS=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+    ) else if exist "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" (
+        set "VCVARS=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+    )
+)
+
+if not defined CUDA_ARCH set "CUDA_ARCH=61"
 
 echo === Step 1: Preserve and prepare build directory ===
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
@@ -32,7 +51,7 @@ if errorlevel 1 (
 echo === Step 3: Configure with NMake ===
 cmake -S "%SWARM_DIR%" -B "%BUILD_DIR%" -G "NMake Makefiles" ^
     -DGGML_CUDA=ON -DGGML_RPC=ON -DGGML_BACKEND_DL=OFF ^
-    -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=61
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=%CUDA_ARCH%
 if errorlevel 1 (
     echo ERROR: CMake configuration failed. Existing build artifacts were preserved.
     exit /b 1

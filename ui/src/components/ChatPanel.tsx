@@ -377,12 +377,10 @@ function ChatInput({
                 id="chat-max-tokens"
                 type="range"
                 min={32}
-                // Keep the UI in lockstep with the coordinator's hard ceiling
-                // (inference_engine.cpp rejects max_tokens > 512 with HTTP 400).
-                max={Math.min(512, contextWindow || 512)}
+                max={Math.min(4096, contextWindow || 2048)}
                 step={32}
-                value={Math.min(maxTokens, 512)}
-                onChange={(e) => setMaxTokens(Math.min(512, Number(e.target.value)))}
+                value={maxTokens}
+                onChange={(e) => setMaxTokens(Number(e.target.value))}
                 style={{ width: "100%", accentColor: "var(--color-accent)" }}
               />
             </div>

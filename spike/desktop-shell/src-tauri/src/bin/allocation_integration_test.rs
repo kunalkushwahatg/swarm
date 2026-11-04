@@ -89,7 +89,14 @@ fn main() {
     println!("SWARM: CUSTOM ALLOCATION DYNAMIC & TENSOR-SPLIT INTEGRATION TEST");
     println!("============================================================");
 
-    let workspace_root = std::path::PathBuf::from(r"C:\Users\kunal\OneDrive\Desktop\swarm");
+    let workspace_root = std::env::var("SWARM_WORKSPACE_ROOT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::current_dir()
+                .ok()
+                .and_then(|cwd| cwd.ancestors().find(|p| p.join("models").exists()).map(|p| p.to_path_buf()))
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+        });
     println!("Workspace Root: {:?}", workspace_root);
 
     // Initial check: ensure ports are available

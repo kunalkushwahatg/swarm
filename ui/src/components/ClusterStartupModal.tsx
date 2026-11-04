@@ -472,7 +472,7 @@ export const ClusterStartupModal: React.FC = () => {
                 </span>
               </div>
               <span style={{ fontSize: 11, color: "var(--color-text-3)" }}>
-                {activeStage > 1 ? "Verified Reachable" : hasRpcWorker && remoteDevice ? `Probing ${remoteDevice.connectionAddress || "192.168.137.233:50052"}` : "Checking loopback ports"}
+                {activeStage > 1 ? "Verified Reachable" : hasRpcWorker && remoteDevice ? `Probing ${remoteDevice.connectionAddress || "remote worker"}` : "Checking loopback ports"}
               </span>
             </div>
 

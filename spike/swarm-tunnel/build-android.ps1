@@ -4,17 +4,30 @@
 
 $ErrorActionPreference = "Stop"
 
-$ndk = "C:\Users\kunal\AppData\Local\Android\Sdk\ndk\27.2.12479018"
+$ndk = if ($env:ANDROID_NDK_HOME -and (Test-Path $env:ANDROID_NDK_HOME)) {
+    $env:ANDROID_NDK_HOME
+} elseif ($env:ANDROID_NDK_ROOT -and (Test-Path $env:ANDROID_NDK_ROOT)) {
+    $env:ANDROID_NDK_ROOT
+} elseif ($env:LOCALAPPDATA -and (Test-Path "$env:LOCALAPPDATA\Android\Sdk\ndk")) {
+    $latestNdk = Get-ChildItem "$env:LOCALAPPDATA\Android\Sdk\ndk" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+    if ($latestNdk) { $latestNdk.FullName } else { "" }
+} else { "" }
+
+if (-not $ndk -or -not (Test-Path $ndk)) {
+    throw "Android NDK not found. Set ANDROID_NDK_HOME or install NDK via Android Studio."
+}
+
 $bin = "$ndk\toolchains\llvm\prebuilt\windows-x86_64\bin"
 $api = "26"
 
-if (-not (Test-Path $bin)) { throw "NDK not found at $bin" }
+if (-not (Test-Path $bin)) { throw "NDK toolchain bin directory not found at $bin" }
 
 $env:CC_aarch64_linux_android = "$bin\clang.exe"
 $env:CXX_aarch64_linux_android = "$bin\clang++.exe"
 $env:AR_aarch64_linux_android = "$bin\llvm-ar.exe"
 $env:CFLAGS_aarch64_linux_android = "--target=aarch64-linux-android$api"
 $env:CXXFLAGS_aarch64_linux_android = "--target=aarch64-linux-android$api"
+$env:CARGO_TARGET_AARCH64_LINUX_ANDROID_AR = "$bin\llvm-ar.exe"
 $env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = "$bin\aarch64-linux-android$api-clang.cmd"
 
 Push-Location $PSScriptRoot

@@ -1,3 +1,5 @@
+# Android aarch64 cross-compilation target configuration.
+# The linker and ar paths are dynamically provided by build-android.ps1
+# via CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER and CARGO_TARGET_AARCH64_LINUX_ANDROID_AR.
 [target.aarch64-linux-android]
-ar = "C:/Users/kunal/AppData/Local/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe"
-linker = "C:/Users/kunal/AppData/Local/Android/Sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android26-clang.cmd"
+# Linker configured dynamically via environment in build-android.ps1

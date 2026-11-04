@@ -81,7 +81,7 @@ fn main() {
             std::env::current_dir()
                 .ok()
                 .and_then(|cwd| cwd.ancestors().find(|p| p.join("spike").exists() && p.join("models").exists()).map(|p| p.to_path_buf()))
-                .unwrap_or_else(|| PathBuf::from(r"C:\Users\kunal\OneDrive\Desktop\swarm"))
+                .unwrap_or_else(|| PathBuf::from("."))
         });
     let test_child_bin = workspace_root.join(r"spike\desktop-shell\src-tauri\target\debug\test_child.exe");
     let working_dir = workspace_root.join(r"spike\desktop-shell");
