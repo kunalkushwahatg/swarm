@@ -107,7 +107,6 @@ export const ModelSwitchModal: React.FC<ModelSwitchModalProps> = ({
           <button
             type="button"
             onClick={onDismiss}
-            disabled={isRestarting}
             className="btn-ghost"
             style={{ padding: "6px 14px", fontSize: 12.5 }}
           >
@@ -124,7 +123,7 @@ export const ModelSwitchModal: React.FC<ModelSwitchModalProps> = ({
             {isRestarting ? (
               <>
                 <Loader2 size={13} className="animate-spin" />
-                <span>Restarting Engine…</span>
+                <span>Reloading Model Weights…</span>
               </>
             ) : (
               <>

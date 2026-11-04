@@ -23,15 +23,19 @@ export function GlobalModelSwitchDialog() {
 
   const handleConfirm = async () => {
     if (!pending) return;
-    await modelsApi.selectModel(pending.id, true);
-    localStorage.setItem("swarm_active_model_path", pending.path);
-    localStorage.setItem("swarm_active_model_name", pending.name);
-    if (pending.gguf?.context_length) {
-      localStorage.setItem("swarm_active_model_ctx", String(pending.gguf.context_length));
+    const target = pending;
+    try {
+      await modelsApi.selectModel(target.id, true);
+      localStorage.setItem("swarm_active_model_path", target.path);
+      localStorage.setItem("swarm_active_model_name", target.name);
+      if (target.gguf?.context_length) {
+        localStorage.setItem("swarm_active_model_ctx", String(target.gguf.context_length));
+      }
+      window.dispatchEvent(new CustomEvent("swarm-model-changed", { detail: target }));
+      window.dispatchEvent(new CustomEvent("swarm-model-library-refresh"));
+    } finally {
+      setPending(null);
     }
-    window.dispatchEvent(new CustomEvent("swarm-model-changed", { detail: pending }));
-    window.dispatchEvent(new CustomEvent("swarm-model-library-refresh"));
-    setPending(null);
   };
 
   return (

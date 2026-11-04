@@ -63,6 +63,18 @@ pub fn run() {
         }
     }
 
+    // Automatically calibrate standalone VRAM threshold for 4GB or lower GPUs
+    if std::env::var("SWARM_MIN_VRAM_MB").is_err() {
+        if let Some((_, total_vram_mb)) = supervisor::win32::get_available_vram_mb() {
+            if total_vram_mb <= 4500 {
+                unsafe {
+                    std::env::set_var("SWARM_MIN_VRAM_MB", "800");
+                }
+                println!("[Supervisor] Auto-calibrated standalone VRAM threshold to 800 MB for 4GB GPU host (Total: {} MB)", total_vram_mb);
+            }
+        }
+    }
+
     let job = Arc::new(JobObject::new().expect("Failed to initialize Windows Job Object"));
     supervisor::job::set_global_job(Arc::clone(&job));
     let manager = Arc::new(ProcessManager::new(Arc::clone(&job)));

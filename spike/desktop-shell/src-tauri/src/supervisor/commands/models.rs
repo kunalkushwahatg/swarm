@@ -190,25 +190,35 @@ pub async fn models_select_model(
 
     if is_running && do_restart {
         println!("[Supervisor] Stopping active engine to switch to selected model: {}", model.name);
-        crate::supervisor::commands::lifecycle::stop_engine_internal(&state)
-            .map_err(|e| format!("Failed to stop the engine before switching models: {}", e))?;
+        let state_clone = state.inner().clone();
+        let model_clone = model.clone();
 
-        // Wait briefly for process cleanup
-        tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
+        tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+            let _ = crate::supervisor::commands::lifecycle::stop_engine_internal(&state_clone);
 
-        println!("[Supervisor] Restarting engine with new model path: {}", model.path.display());
-        let active_profile = state.orchestrator.get_status().active_profile;
-        let launch_options = crate::supervisor::commands::types::StartEngineOptions {
-            mode: Some("real".to_string()),
-            profile: active_profile,
-            allow_real_runtime: Some(true),
-            simulate_failure: None,
-        };
-        crate::supervisor::commands::lifecycle::start_engine_internal(&state, Some(launch_options))
-            .map_err(|e| format!(
-                "Model '{}' was selected, but the engine failed to restart: {}",
-                model.name, e
-            ))?;
+            // Bounded wait for coordinator port 8080 to be released by Windows TCP stack
+            let port_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while std::time::Instant::now() < port_deadline {
+                if crate::supervisor::config::is_loopback_port_available(8080) {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(150));
+            }
+
+            println!("[Supervisor] Restarting engine with new model path: {}", model_clone.path.display());
+            let active_profile = state_clone.orchestrator.get_status().active_profile;
+            let launch_options = crate::supervisor::commands::types::StartEngineOptions {
+                mode: Some("real".to_string()),
+                profile: active_profile,
+                allow_real_runtime: Some(true),
+                simulate_failure: None,
+            };
+            crate::supervisor::commands::lifecycle::start_engine_internal(&state_clone, Some(launch_options))
+                .map(|_| ())
+                .map_err(|e| format!("Model '{}' was selected, but the engine failed to restart: {}", model_clone.name, e))
+        })
+        .await
+        .map_err(|e| format!("Task join error during model restart: {}", e))??;
     }
 
     Ok(ModelSelectResult {
