@@ -123,15 +123,29 @@ void setup_coordinator_routes(
     std::atomic<bool>& g_running
 ) {
     // Security: Protect against DNS rebinding and cross-site request forgery.
-    // The coordinator's API gateway must only accept loopback Host headers.
+    // Enforce exact loopback hostname matching, preventing substring bypasses
+    // (e.g. attacker-127.0.0.1.com or evil-localhost.org).
     server.set_pre_routing_handler([](const httplib::Request &req, httplib::Response &res) {
         if (req.has_header("Host")) {
             std::string host = req.get_header_value("Host");
-            if (host.find("127.0.0.1") == std::string::npos &&
-                host.find("localhost") == std::string::npos &&
-                host.find("::1") == std::string::npos) {
+            std::string hostname = host;
+            if (!hostname.empty() && hostname.front() == '[') {
+                size_t close_bracket = hostname.find(']');
+                if (close_bracket != std::string::npos) {
+                    hostname = hostname.substr(0, close_bracket + 1);
+                }
+            } else {
+                size_t colon = hostname.rfind(':');
+                if (colon != std::string::npos) {
+                    hostname = hostname.substr(0, colon);
+                }
+            }
+            if (hostname != "127.0.0.1" &&
+                hostname != "localhost" &&
+                hostname != "::1" &&
+                hostname != "[::1]") {
                 res.status = 403;
-                res.set_content("{\"error\":\"Forbidden: Invalid Host header\"}", "application/json");
+                res.set_content("{\"error\":\"Forbidden: Invalid Host header (DNS rebinding protection)\"}", "application/json");
                 return httplib::Server::HandlerResponse::Handled;
             }
         }
@@ -350,6 +364,9 @@ void setup_coordinator_routes(
 
     // Chat completions endpoint
     server.Post("/v1/chat/completions", [&](const httplib::Request &req, httplib::Response &res) {
+        if (!check_telemetry_auth(req, res, config.telemetry_auth_token)) {
+            return;
+        }
         static std::atomic<uint64_t> request_counter{0};
         uint64_t request_id = ++request_counter;
 

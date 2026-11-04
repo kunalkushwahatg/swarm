@@ -6,7 +6,7 @@ param(
     [string]$CoordinatorUrl = "http://127.0.0.1:8080",
 
     [Parameter(Mandatory=$false)]
-    [string]$ListenHost = "0.0.0.0",
+    [string]$ListenHost = "127.0.0.1",
 
     [Parameter(Mandatory=$false)]
     [int]$RpcPort = 50052,

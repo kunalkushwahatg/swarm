@@ -621,13 +621,27 @@ int main() {
         struct gguf_init_params gparams = { true, nullptr };
         struct gguf_context * ctx_gguf = gguf_init_from_file(config.model_path.c_str(), gparams);
         if (ctx_gguf) {
-            for (const char* arch : {"qwen2", "llama", "phi3", "deepseek2", "gemma", "gemma2", "command-r", "mistral", "smollm", "smollm2"}) {
-                std::string key = std::string(arch) + ".block_count";
-                int kid = gguf_find_key(ctx_gguf, key.c_str());
-                if (kid >= 0) {
-                    model_transformer_layers = static_cast<int32_t>(gguf_get_val_u32(ctx_gguf, kid));
-                    log_info("Detected " + std::to_string(model_transformer_layers) + " transformer blocks from GGUF metadata (" + key + ")");
-                    break;
+            int arch_key_id = gguf_find_key(ctx_gguf, "general.architecture");
+            if (arch_key_id >= 0) {
+                const char* arch_name = gguf_get_val_str(ctx_gguf, arch_key_id);
+                if (arch_name && *arch_name != '\0') {
+                    std::string key = std::string(arch_name) + ".block_count";
+                    int kid = gguf_find_key(ctx_gguf, key.c_str());
+                    if (kid >= 0) {
+                        model_transformer_layers = static_cast<int32_t>(gguf_get_val_u32(ctx_gguf, kid));
+                        log_info("Detected " + std::to_string(model_transformer_layers) + " transformer blocks from GGUF architecture '" + arch_name + "'");
+                    }
+                }
+            }
+            if (model_transformer_layers <= 0) {
+                for (const char* arch : {"qwen2", "llama", "phi3", "phi4", "deepseek2", "gemma", "gemma2", "command-r", "mistral", "smollm", "smollm2", "starcoder2", "falcon"}) {
+                    std::string key = std::string(arch) + ".block_count";
+                    int kid = gguf_find_key(ctx_gguf, key.c_str());
+                    if (kid >= 0) {
+                        model_transformer_layers = static_cast<int32_t>(gguf_get_val_u32(ctx_gguf, kid));
+                        log_info("Detected " + std::to_string(model_transformer_layers) + " transformer blocks from GGUF metadata (" + key + ")");
+                        break;
+                    }
                 }
             }
             gguf_free(ctx_gguf);

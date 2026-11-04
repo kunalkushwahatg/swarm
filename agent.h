@@ -68,7 +68,7 @@ inline bool extract_bearer_token(const std::string& auth_header, std::string& to
 }
 
 inline bool is_loopback_address(const std::string& addr) {
-    if (addr.empty()) return true;
+    if (addr.empty()) return false;
     if (addr == "127.0.0.1" || addr == "::1" || addr == "localhost") return true;
     if (addr.rfind("127.", 0) == 0) return true;
     return false;

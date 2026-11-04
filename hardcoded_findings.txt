@@ -1,0 +1,854 @@
+# Comprehensive Audit of Hard-Coded & High-Risk Values in Swarm
+Audit Target: C:\Users\kunal\OneDrive\Desktop\swarm
+Audit Scope: Full line-by-line inspection of C++ Core Engine, Rust Desktop Shell & Supervisor, Rust P2P Tunnel, Android Worker Service, Web UI Frontend, Build Scripts, and Configurations.
+Date: November 2026
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+An exhaustive, line-by-line examination of the Swarm distributed inference system was performed to identify dangerous hard-coded values, credentials, IP addresses, ports, cryptographic weaknesses, memory assumptions, path assumptions, and security bypasses.
+
+A total of 42 high-risk hard-coded issues were verified and classified into 6 critical categories:
+1. Hardcoded Cryptographic Weaknesses, Secrets & Authentication Bypasses (CRITICAL)
+2. Unrestricted / Unauthenticated Network Bindings & Endpoints (CRITICAL / HIGH)
+3. Hardcoded Model Architecture & Memory Cost Assumptions (HIGH)
+4. Hardcoded Network Addresses, Ports & Endpoints (HIGH)
+5. Hardcoded Paths, Toolchains & Process Hijacking Risks (HIGH / MEDIUM)
+6. Hardcoded Buffers, Rigid Limits & Denial-of-Service Thresholds (MEDIUM)
+
+Below is the complete line-by-line log of all identified hard-coded findings.
+
+================================================================================
+SECTION 1: HARDCODED SECRETS, CRYPTO WEAKNESSES & AUTHENTICATION BYPASSES
+================================================================================
+
+[FINDING-01]
+File: spike/swarm-tunnel/src/main.rs:168-177
+Category: Cryptographic Weakness / Key Derivation
+Severity: CRITICAL
+Code Snippet:
+```rust
+fn pair_code_key(code: &str) -> SecretKey {
+    let normalized = normalize_pair_code(code);
+    let mut hasher = Sha256::new();
+    hasher.update(b"swarm-pair-v1:");
+    hasher.update(normalized.as_bytes());
+    let digest = hasher.finalize();
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&digest);
+    SecretKey::from_bytes(&bytes)
+}
+```
+Danger & Impact:
+The 32-byte Iroh QUIC tunnel private key is directly derived from a 6-digit numeric pairing PIN with a single round of SHA-256 and a hardcoded static salt (`b"swarm-pair-v1:"`). A 6-digit PIN has only 1,000,000 possible states. An attacker can precompute the entire keyspace on a standard GPU in less than 1 second. Because the derived EndpointId is announced to public Pkarr/DHT servers, any passive eavesdropper can look up the ID, immediately recover the private key, impersonate either the host or phone, decrypt all tunnel traffic, intercept inference tensors, and execute unauthorized GGML RPC commands.
+Recommendation:
+Do not derive asymmetric identity keys directly from a low-entropy PIN without an interactive authenticated key exchange (e.g., SPAKE2, OPAQUE, or SPAKE2+ over TLS/Noise) or require high-entropy pairing tokens.
+
+--------------------------------------------------------------------------------
+
+[FINDING-02]
+File: spike/swarm-tunnel/src/main.rs:333-372
+Category: Access Control / Missing Peer Authentication
+Severity: CRITICAL
+Code Snippet:
+```rust
+loop {
+    let Some(incoming) = endpoint.accept().await else {
+        break;
+    };
+    tokio::spawn(async move {
+        let conn = match incoming.await { ... };
+        ...
+        pipe_to_tcp(send, recv, rpc_addr).await
+    });
+}
+```
+Danger & Impact:
+The tunnel `serve` function unconditionally accepts all incoming QUIC connections from any peer and pipes their streams directly to the local unauthenticated GGML RPC server. There is no peer public key whitelist, mutual authentication check, or challenge-response verification. Any entity that connects to the tunnel gains immediate, raw command access to the RPC server on localhost, allowing them to allocate arbitrary memory or execute compute graphs.
+Recommendation:
+Verify `conn.remote_id()` against an authorized peer whitelist before accepting bidirectional streams.
+
+--------------------------------------------------------------------------------
+
+[FINDING-03]
+File: secrets/m12_telemetry_token.txt:1
+Category: Hardcoded Secret / Credential Exposure
+Severity: CRITICAL
+Code Snippet:
+```text
+354528b9e7f10e0082e0d5ad598c0e2f2838b552751a54b6f7c9b6164bbaca50
+```
+Danger & Impact:
+A live, production-format 256-bit telemetry authentication Bearer token is stored in plaintext in the repository. Furthermore, scripts like `Invoke-Milestone12Validation.ps1` default to loading this specific token file. If this repository is committed or shared, anyone possessing the token can forge telemetry reports and authenticate against the coordinator.
+Recommendation:
+Add `secrets/` to `.gitignore`. Generate secrets dynamically at runtime into secure OS-protected storage.
+
+--------------------------------------------------------------------------------
+
+[FINDING-04]
+File: coordinator_http.cpp:127-139
+Category: Security / DNS Rebinding & Substring Match Bypass
+Severity: CRITICAL
+Code Snippet:
+```cpp
+if (req.has_header("Host")) {
+    std::string host = req.get_header_value("Host");
+    if (host.find("127.0.0.1") == std::string::npos &&
+        host.find("localhost") == std::string::npos &&
+        host.find("::1") == std::string::npos) {
+        res.status = 403;
+        res.set_content("{\"error\":\"Forbidden: Invalid Host header\"}", "application/json");
+        return httplib::Server::HandlerResponse::Handled;
+    }
+}
+```
+Danger & Impact:
+The DNS rebinding protection checks if the Host header contains `"127.0.0.1"` or `"localhost"` as a substring (`.find() != npos`). An attacker registering domains such as `127.0.0.1.attacker.com` or `evil-localhost.net` will completely bypass this check! A malicious webpage visited by a user on the same machine can execute cross-origin requests to the local Swarm coordinator and trigger inference or extract node telemetry.
+Recommendation:
+Perform strict parsing of the Host header to extract the hostname and port, then check for exact equality with `"127.0.0.1"`, `"localhost"`, or `"::1"`.
+
+--------------------------------------------------------------------------------
+
+[FINDING-05]
+File: agent.h:70-75 & 128-132
+Category: Security / Loopback Detection Bypass on Empty Address
+Severity: HIGH
+Code Snippet:
+```cpp
+inline bool is_loopback_address(const std::string& addr) {
+    if (addr.empty()) return true;
+    if (addr == "127.0.0.1" || addr == "::1" || addr == "localhost") return true;
+    if (addr.rfind("127.", 0) == 0) return true;
+    return false;
+}
+```
+Danger & Impact:
+`is_loopback_address` explicitly returns `true` if `addr.empty()`. In `verify_telemetry_request`:
+```cpp
+if (!remote_addr.empty() && !is_loopback_address(remote_addr)) {
+    return AuthResult::REMOTE_UNAUTHENTICATED_FORBIDDEN;
+}
+```
+If an HTTP client or proxy forwards a request where `remote_addr` is reported as empty by the underlying socket or server implementation, the request is treated as trusted loopback and granted access without requiring a Bearer token.
+Recommendation:
+An empty `remote_addr` must fail closed (`return false`).
+
+--------------------------------------------------------------------------------
+
+[FINDING-06]
+File: coordinator_http.cpp:352-358
+Category: Security / Missing Authentication on Inference API
+Severity: HIGH
+Code Snippet:
+```cpp
+server.Post("/v1/chat/completions", [&](const httplib::Request &req, httplib::Response &res) {
+    static std::atomic<uint64_t> request_counter{0};
+    uint64_t request_id = ++request_counter;
+
+    inference_engine.handle_chat_completion(
+        request_id, req, res, worker_manager, config, metrics, g_running);
+});
+```
+Danger & Impact:
+While telemetry ingestion routes require Bearer tokens in production mode, the primary LLM inference endpoint `/v1/chat/completions` has NO authentication checks whatsoever. Any local user, software running on the PC, or network client (if coordinator is bound to a LAN/Wi-Fi interface) can send requests to generate tokens, consume 100% of GPU/CPU resources, or starve legitimate queries.
+Recommendation:
+Enforce API key or Bearer token authentication on `/v1/chat/completions` matching the coordinator's security environment.
+
+--------------------------------------------------------------------------------
+
+[FINDING-07]
+File: coordinator_http.cpp:142, 214, 223, 238, 305
+Category: Information Disclosure / Unauthenticated System Observability
+Severity: MEDIUM
+Code Snippet:
+```cpp
+server.Get("/health", ...);
+server.Get("/workers", ...);
+server.Get("/backends", ...);
+server.Get("/nodes", ...);
+server.Get("/metrics", ...);
+```
+Danger & Impact:
+All system diagnostic, device inventory, hardware capacity, and internal IP address endpoints are completely unauthenticated. Anyone able to connect to the coordinator port can read host physical RAM, GPU VRAM, internal worker IP addresses, assigned model layer ranges, and process IDs.
+Recommendation:
+Guard `/nodes`, `/workers`, `/backends`, and `/metrics` behind the configured authentication token when running in production mode.
+
+--------------------------------------------------------------------------------
+
+[FINDING-08]
+File: paths.rs:282-287
+Category: Insecure File Permissions / World-Readable Secret
+Severity: HIGH
+Code Snippet:
+```rust
+let secret_hex = generate_secure_random_hex(32)?;
+std::fs::write(&token_path, &secret_hex)
+    .map_err(|e| format!("Failed to write telemetry secret to {}: {}", token_path.display(), e))?;
+```
+Danger & Impact:
+The supervisor generates and writes `telemetry.token` into `%ProgramData%\Swarm\secrets\telemetry.token`. By default on Windows, `%ProgramData%` allows Read access to all standard users (`Users` group). Any unprivileged user or process running on the same machine can read this token and hijack the coordinator's telemetry channel.
+Recommendation:
+Set explicit Windows DACL/ACLs on the directory and file restricting permissions exclusively to `SYSTEM` and the current user's SID.
+
+--------------------------------------------------------------------------------
+
+[FINDING-09]
+File: agent_main.cpp:177-185
+Category: Plaintext Credential Exposure / Insecure Transport
+Severity: HIGH
+Code Snippet:
+```cpp
+if (coordinator_uses_https) {
+    std::cerr << "[Agent Error] HTTPS coordinator URLs are not supported by this build. "
+              << "Refusing to downgrade to plaintext HTTP; use a local http:// coordinator "
+              << "or an encrypted tunnel." << std::endl;
+    return 1;
+}
+```
+Danger & Impact:
+`swarm_agent` refuses HTTPS and strictly operates over plaintext `http://`. When worker agents report across physical local networks or Wi-Fi hotspots, the HTTP `Authorization: Bearer <token>` header is sent in cleartext across the network wire, allowing packet capture (Wireshark/tcpdump) by anyone on the network to sniff the secret token.
+Recommendation:
+Compile `cpp-httplib` with OpenSSL (`CPPHTTPLIB_OPENSSL_SUPPORT`) to support TLS encryption for remote agent reporting.
+
+--------------------------------------------------------------------------------
+
+[FINDING-10]
+File: SwarmWorkerService.kt:57-58 & 641-657
+Category: Information Disclosure / Unauthenticated UDP Broadcast Responder
+Severity: MEDIUM
+Code Snippet:
+```kotlin
+private const val DISCOVERY_PORT = 50053
+private const val DISCOVERY_MAGIC = "SWARM_DISCOVER"
+...
+val packet = DatagramPacket(buf, buf.size)
+socket.receive(packet)
+val request = String(packet.data, 0, packet.length, StandardCharsets.UTF_8).trim()
+if (!request.startsWith(DISCOVERY_MAGIC)) continue
+val reply = "{\"v\":1,\"platform\":\"android\",\"name\":${jsonString(Build.MODEL)}," +
+    "\"port\":$port,\"host\":${jsonString(primaryIpv4())}," +
+    "\"endpoint_id\":${jsonString(endpointId)}}"
+```
+Danger & Impact:
+The Android worker service listens unconditionally on UDP port 50053 on `0.0.0.0`. Any device on the local network or Wi-Fi hotspot sending a packet starting with `SWARM_DISCOVER` receives an unauthenticated reply containing the phone's device model, local IP, RPC port, and Iroh `endpoint_id`. This exposes mobile devices to network reconnaissance and targeted tracking.
+Recommendation:
+Add a shared network discovery key or HMAC token check before responding.
+
+--------------------------------------------------------------------------------
+
+[FINDING-11]
+File: DeviceOnboardingModal.tsx:118-124
+Category: Credential Exposure in QR Code
+Severity: MEDIUM
+Code Snippet:
+```typescript
+const payload = JSON.stringify({
+  swarm_version: 1,
+  host: hostNetwork.preferred_ip || hostNetwork.ip_addresses[0] || "127.0.0.1",
+  coordinator_port: hostNetwork.coordinator_port || 8080,
+  telemetry_token: hostNetwork.telemetry_token,
+});
+```
+Danger & Impact:
+The onboarding QR code renders the raw `telemetry_token` unencrypted inside the QR matrix. Anyone taking a photo or video of the screen, or peering over the operator's shoulder, captures the full secret bearer token.
+Recommendation:
+Use an ephemeral, single-use pairing code or sign the pairing payload rather than placing the permanent static telemetry bearer token in visual QR codes.
+
+--------------------------------------------------------------------------------
+
+[FINDING-12]
+File: inference_engine.cpp:417-418
+Category: Cryptographic Weakness / Predictable PRNG Seed
+Severity: LOW
+Code Snippet:
+```cpp
+uint32_t seed = static_cast<uint32_t>(std::chrono::system_clock::now().time_since_epoch().count());
+llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
+```
+Danger & Impact:
+The random seed for LLM token sampling is derived directly from the system clock timestamp. Because timestamps are predictable and can be synchronized via HTTP responses, an external observer can predict sampling choices and generation paths.
+Recommendation:
+Use a cryptographically secure random number generator (e.g. `BCryptGenRandom` or `/dev/urandom`) or accept an optional client-provided seed.
+
+================================================================================
+SECTION 2: UNRESTRICTED / DANGEROUS NETWORK BINDINGS
+================================================================================
+
+[FINDING-13]
+File: scripts/Start-RemoteWorker.ps1:9
+Category: Insecure Default / Public Network Binding
+Severity: HIGH
+Code Snippet:
+```powershell
+param(
+    ...
+    [string]$ListenHost = "0.0.0.0",
+    [int]$RpcPort = 50052,
+)
+...
+$rpcArgs = "-H $ListenHost -p $RpcPort -t $Threads"
+$rpcProc = Start-Process -FilePath $rpcBin -ArgumentList $rpcArgs
+```
+Danger & Impact:
+`Start-RemoteWorker.ps1` starts `ggml-rpc-server.exe` listening on `0.0.0.0` (all public network adapters). Upstream GGML RPC protocol has NO encryption, NO TLS, and NO authentication. Any device on the same local subnet, university network, or Wi-Fi can directly connect to port 50052 and execute arbitrary memory allocations or read/write tensors directly in the worker process.
+Recommendation:
+Bind `ggml-rpc-server` strictly to `127.0.0.1` and require all remote communication to traverse an encrypted tunnel (`swarm-tunnel`) or VPN.
+
+--------------------------------------------------------------------------------
+
+[FINDING-14]
+File: scripts/Configure-ComputerAFirewall.ps1:53-55
+Category: Hardcoded IP Addresses in Security Configuration
+Severity: HIGH
+Code Snippet:
+```powershell
+$newRule = New-NetFirewallRule -DisplayName "Swarm Coordinator - Hotspot B Restricted" `
+    -Name $restrictedRuleName `
+    -Direction Inbound `
+    -Action Allow `
+    -Protocol TCP `
+    -LocalPort 8080 `
+    -LocalAddress "192.168.137.174" `
+    -RemoteAddress "192.168.137.1" `
+    -Program $targetExe `
+```
+Danger & Impact:
+Specific developer hotspot IP addresses (`192.168.137.174` and `192.168.137.1`) are hardcoded directly into the firewall script. If deployed on any other host, machine, or subnet, the firewall rule either fails to apply or silently blocks valid remote workers.
+Recommendation:
+Parameterize `$LocalAddress` and `$RemoteAddress` with dynamic subnet detection.
+
+--------------------------------------------------------------------------------
+
+[FINDING-15]
+File: spike/swarm-tunnel/src/main.rs:268-275
+Category: Privacy Leak / Hardcoded External DNS in Tunnel
+Severity: MEDIUM
+Code Snippet:
+```rust
+if !configured && std::env::var("SWARM_DISABLE_PUBLIC_DNS").is_err() {
+    for ip in ["8.8.8.8", "1.1.1.1"] {
+        dns_builder = dns_builder.add_nameserver_config(
+            iroh::dns::NameserverConfig::udp(ip.parse().unwrap()).with_port(53),
+        );
+    }
+}
+```
+Danger & Impact:
+Hardcoded public Google (`8.8.8.8`) and Cloudflare (`1.1.1.1`) DNS resolvers. In enterprise, air-gapped, or privacy-critical deployments, outbound traffic to public DNS resolvers is blocked by corporate firewalls or leaks internal device metadata.
+Recommendation:
+Rely solely on system DNS resolvers or allow explicit configuration through application settings.
+
+================================================================================
+SECTION 3: HARDCODED MODEL ARCHITECTURES & MEMORY SIZING ASSUMPTIONS
+================================================================================
+
+[FINDING-16]
+File: main.cpp:624 & 638
+Category: Model Architecture / Rigid Hardcoded Fallback
+Severity: HIGH
+Code Snippet:
+```cpp
+for (const char* arch : {"qwen2", "llama", "phi3", "deepseek2", "gemma", "gemma2", "command-r", "mistral", "smollm", "smollm2"}) {
+    std::string key = std::string(arch) + ".block_count";
+    int kid = gguf_find_key(ctx_gguf, key.c_str());
+    if (kid >= 0) {
+        model_transformer_layers = static_cast<int32_t>(gguf_get_val_u32(ctx_gguf, kid));
+        break;
+    }
+}
+...
+if (model_transformer_layers <= 0) {
+    model_transformer_layers = 36;
+    log_warn("Falling back to default 36 transformer blocks");
+}
+```
+Danger & Impact:
+The architecture detection searches an explicit, hardcoded list of model architecture strings. If a user loads an architecture not in this list (e.g. `phi4`, `deepseek3`, `nemotron`, `starcoder2`, `qwen`, `stablelm`, `baichuan`), detection fails and it falls back to 36 transformer blocks. If the actual model has 16, 28, or 64 layers, Swarm creates an invalid partition plan, causing memory corruption or CUDA crashes.
+Recommendation:
+Query the model architecture key dynamically (`general.architecture`), then look up `<arch>.block_count`.
+
+--------------------------------------------------------------------------------
+
+[FINDING-17]
+File: policy.h:65
+Category: Resource Management / Rigid Layer Cost Assumption
+Severity: HIGH
+Code Snippet:
+```cpp
+static constexpr uint64_t DEFAULT_ESTIMATED_BYTES_PER_LAYER = 92ULL * 1024ULL * 1024ULL;
+```
+Danger & Impact:
+The placement policy engine hardcodes a fallback of 92 MiB per layer (specifically tuned for Qwen 2.5 3B). When loading smaller models (such as SmolLM2 135M where layers cost ~2.8 MiB or SmolLM2 360M where layers cost ~7.5 MiB), the engine calculates that the model requires multi-gigabyte allocations and declares that low-end hardware has insufficient memory.
+Recommendation:
+Derive layer memory cost dynamically from GGUF tensor metadata, model weight size, and context length.
+
+--------------------------------------------------------------------------------
+
+[FINDING-18]
+File: estimator.h:71-77
+Category: Model Capacity / Hardcoded Qwen 2.5 3B Constants
+Severity: HIGH
+Code Snippet:
+```cpp
+static constexpr uint64_t BASE_WEIGHTS_PER_LAYER_BYTES = 73ULL * 1024ULL * 1024ULL;  // ~73 MiB
+static constexpr uint64_t BASE_KV_CACHE_2048_BYTES = 16ULL * 1024ULL * 1024ULL;      // ~16 MiB at n_ctx=2048
+static constexpr uint64_t COMPUTE_BUFFER_PER_LAYER_BYTES = 2360000ULL;                // ~2.25 MiB
+static constexpr uint64_t DEFAULT_HEADROOM_RAM_BYTES = 1024ULL * 1024ULL * 1024ULL;   // 1 GiB OS headroom
+static constexpr uint64_t DEFAULT_HEADROOM_VRAM_BYTES = 256ULL * 1024ULL * 1024ULL;   // 256 MiB GPU headroom
+static constexpr uint64_t FRESHNESS_TTL_MS = 30000ULL;                                // 30s freshness threshold
+```
+Danger & Impact:
+All base capacity calculations for weights, KV cache, and compute buffer are hardcoded to the specific characteristics of Qwen 2.5 3B Q4_K_M. If a larger model (e.g. 7B, 14B) is loaded, the estimator severely underestimates the necessary memory headroom, leading to out-of-memory crashes on host GPUs or remote worker nodes.
+Recommendation:
+Parameterize capacity estimation based on the active model's vocabulary size, hidden dimension, and context window.
+
+--------------------------------------------------------------------------------
+
+[FINDING-19]
+File: spike/desktop-shell/src-tauri/src/supervisor/planning.rs:8-19
+Category: Model Planning / Hardcoded Desktop Supervisor Constants
+Severity: HIGH
+Code Snippet:
+```rust
+pub const TOTAL_MODEL_LAYERS: i32 = 37;
+pub const TOTAL_MODEL_TRANSFORMER_LAYERS: i32 = 36;
+pub const BASE_WEIGHTS_PER_LAYER_BYTES: u64 = 73 * 1024 * 1024;
+pub const BASE_WEIGHTS_Q5KM_BYTES: u64 = 85 * 1024 * 1024;
+pub const BASE_WEIGHTS_Q8_0_BYTES: u64 = 115 * 1024 * 1024;
+pub const BASE_WEIGHTS_F16_BYTES: u64 = 175 * 1024 * 1024;
+pub const BASE_KV_CACHE_2048_BYTES: u64 = 16 * 1024 * 1024;
+pub const COMPUTE_BUFFER_PER_LAYER_BYTES: u64 = 2_360_000;
+pub const DEFAULT_HEADROOM_RAM_MB: u64 = 1024;
+pub const DEFAULT_HEADROOM_VRAM_MB: u64 = 256;
+pub const TELEMETRY_FRESHNESS_TTL_MS: u64 = 30_000;
+```
+Danger & Impact:
+Mirrors the C++ engine's assumptions in Rust. Fallback calculations in the desktop supervisor assume a 37-layer model with 73 MiB weights per layer. If GGUF parsing fails or fallback paths are hit, the allocation planner displays distorted layer distributions to the user.
+Recommendation:
+Ensure all UI preview calculations reflect dynamic parameters loaded directly from the model file.
+
+--------------------------------------------------------------------------------
+
+[FINDING-20]
+File: spike/desktop-shell/src-tauri/src/supervisor/commands/lifecycle.rs:42-69
+Category: Resource Preflight / Hardcoded Hardware Requirements
+Severity: HIGH
+Code Snippet:
+```rust
+let min_ram: u64 = std::env::var("SWARM_MIN_RAM_MB")
+    .ok()
+    .and_then(|v| v.parse().ok())
+    .unwrap_or(1000);
+...
+let min_vram = std::env::var("SWARM_MIN_VRAM_MB")
+    .ok()
+    .and_then(|v| v.parse::<u64>().ok())
+    .unwrap_or(3100);
+```
+Danger & Impact:
+The standalone CUDA profile refuses to launch unless the machine has at least 3,100 MiB free VRAM and 1,000 MB free RAM. This check is calibrated strictly for running all 37 layers of Qwen 2.5 3B on a 4GB GTX 1050. When running smaller models (like SmolLM2 135M or 360M which require less than 500 MiB VRAM), this hardcoded check prevents the engine from starting on GPUs with 1GB or 2GB VRAM.
+Recommendation:
+Compute minimum VRAM dynamically: `model_file_size + kv_cache_size + compute_buffer_size`.
+
+================================================================================
+SECTION 4: HARDCODED NETWORK ADDRESSES, PORTS & ENDPOINTS
+================================================================================
+
+[FINDING-21]
+File: config.h:150-153
+Category: Network Configuration / Default Endpoints
+Severity: MEDIUM
+Code Snippet:
+```cpp
+http_bind_address("127.0.0.1"),
+http_port(8080),
+rpc_enabled(false),
+rpc_endpoint("127.0.0.1:50052"),
+```
+Danger & Impact:
+Default coordinator HTTP port (8080) and default RPC endpoint port (50052) are hardcoded. If port 8080 is occupied by another local service (e.g. dev web servers, proxies, Tomcat), startup fails without automatic fallback or clear guidance.
+Recommendation:
+Allow runtime port selection and fallback negotiation in GUI.
+
+--------------------------------------------------------------------------------
+
+[FINDING-22]
+File: config.h:413, 415
+Category: Port Assignment / Rigid Port Arithmetic
+Severity: MEDIUM
+Code Snippet:
+```cpp
+worker.port = static_cast<uint16_t>(50052 + i);
+```
+Danger & Impact:
+Local RPC workers are assigned sequential ports starting at 50052 (`50052 + i`). If any port in that range is occupied, worker initialization fails instead of searching for the next free port.
+Recommendation:
+Use ephemeral port allocation (bind port 0) or check port availability before assigning.
+
+--------------------------------------------------------------------------------
+
+[FINDING-23]
+File: ui/src/lib/api.ts:22 & 31-33
+Category: Frontend Hardcoded Port & Host
+Severity: HIGH
+Code Snippet:
+```typescript
+let activeCoordinatorPort = 8080;
+...
+export const BASE_URL =
+  import.meta.env.VITE_SWARM_API_URL ??
+  (isTauri ? "http://127.0.0.1:8080" : "");
+```
+Danger & Impact:
+`BASE_URL` is exported as a static constant set to `http://127.0.0.1:8080`. While `getBaseUrl()` was introduced, any component importing `BASE_URL` will fail to connect if the coordinator is launched on an alternate port.
+Recommendation:
+Deprecate `BASE_URL` export and route all requests through dynamic `getBaseUrl()`.
+
+--------------------------------------------------------------------------------
+
+[FINDING-24]
+File: spike/desktop-shell/src-tauri/src/supervisor/commands/diagnostics.rs:20, 21, 46, 57
+Category: Diagnostics / Hardcoded Port Checks
+Severity: MEDIUM
+Code Snippet:
+```rust
+let coord_occupied = !is_loopback_port_available(8080);
+let coord_listening = is_port_listening(8080);
+...
+let rpc_occupied = !is_loopback_port_available(50052);
+let rpc_listening = is_port_listening(50052);
+```
+Danger & Impact:
+Diagnostic checks specifically hardcode ports 8080 and 50052. If the user configures custom ports via environment variables, the diagnostic UI continues reporting status for 8080 and 50052, generating false error reports.
+Recommendation:
+Read active ports dynamically from `CoordinatorConfig` or supervisor state.
+
+--------------------------------------------------------------------------------
+
+[FINDING-25]
+File: spike/desktop-shell/src-tauri/src/supervisor/commands/lifecycle.rs:95, 100, 136
+Category: Supervisor Environment / Hardcoded Ports & Endpoints
+Severity: MEDIUM
+Code Snippet:
+```rust
+("PORT".to_string(), "8080".to_string()),
+...
+("SWARM_DEPLOYMENT_ENV".to_string(), "development".to_string()),
+...
+let mut all_endpoints = vec!["127.0.0.1:50052".to_string()];
+```
+Danger & Impact:
+The supervisor forcibly sets `PORT` to `"8080"`, `SWARM_DEPLOYMENT_ENV` to `"development"`, and seeds endpoints with `"127.0.0.1:50052"`. This overrides user environment configurations and locks the process to development mode on port 8080.
+Recommendation:
+Honor existing environment variables or user settings before applying defaults.
+
+================================================================================
+SECTION 5: HARDCODED PATHS, TOOLCHAINS & PROCESS EXECUTION RISKS
+================================================================================
+
+[FINDING-26]
+File: worker.cpp:387, 413-424
+Category: Process Execution / Unqualified Binary Name Hijacking
+Severity: HIGH
+Code Snippet:
+```cpp
+std::stringstream cmd;
+cmd << "\"ggml-rpc-server.exe\" --host " << worker.host
+    << " --port " << worker.port;
+...
+CreateProcessA(
+    NULL,           // No module name (use command line)
+    &cmd_str[0],    // Command line
+    ...
+)
+```
+Danger & Impact:
+`CreateProcessA` is called with `NULL` as `lpApplicationName` and `"\"ggml-rpc-server.exe\" ..."` as `lpCommandLine`. Because `ggml-rpc-server.exe` is not an absolute path, Windows searches the current working directory first before PATH. If a malicious user drops an executable named `ggml-rpc-server.exe` into the application's working directory, it will be executed with the full permissions of the Swarm process.
+Recommendation:
+Pass the fully-qualified absolute path to `ggml-rpc-server.exe` in `lpApplicationName`.
+
+--------------------------------------------------------------------------------
+
+[FINDING-27]
+File: worker.cpp:396, 398
+Category: Race Condition / Process Environment Mutation
+Severity: HIGH
+Code Snippet:
+```cpp
+#ifdef _WIN32
+SetEnvironmentVariableA("LLAMA_CACHE", cache_dir.c_str());
+#else
+setenv("LLAMA_CACHE", cache_dir.c_str(), 1);
+#endif
+```
+Danger & Impact:
+When starting a local worker, `WorkerManager::start_local_workers` modifies the global process environment variable `LLAMA_CACHE` using `SetEnvironmentVariableA`. Because `WorkerManager` starts multiple workers sequentially, each worker overwrites `LLAMA_CACHE` for the entire process, creating thread-safety races with any other threads reading the environment.
+Recommendation:
+Pass the cache directory directly as a parameter or pass a custom environment block to `CreateProcessA` / `fork()`.
+
+--------------------------------------------------------------------------------
+
+[FINDING-28]
+File: paths.rs:91, 99, 118, 236
+Category: Model Path / Hardcoded Default Filename
+Severity: MEDIUM
+Code Snippet:
+```rust
+let dev_model = workspace_root.join(r"models\qwen2.5-3b-instruct-q4_k_m.official-check.gguf");
+...
+let target = dir.join("qwen2.5-3b-instruct-q4_k_m.official-check.gguf");
+```
+Danger & Impact:
+The supervisor explicitly looks for `"qwen2.5-3b-instruct-q4_k_m.official-check.gguf"` across developer, ProgramData, and LocalAppData directories. If a user downloads an officially quantized model with standard naming (e.g. `qwen2.5-3b-instruct-q4_k_m.gguf` without `.official-check`), the supervisor fails to recognize it.
+Recommendation:
+Match models by metadata or standard naming patterns rather than a fixed `.official-check` string.
+
+--------------------------------------------------------------------------------
+
+[FINDING-29]
+File: paths.rs:175-180, 204, 226
+Category: Runtime Paths / Hardcoded Build Directory Assumptions
+Severity: MEDIUM
+Code Snippet:
+```rust
+let dev_coord = workspace_root.join(r"build-cuda\swarm_node.exe");
+...
+None => workspace_root.join(r"dist\swarm-worker-windows-x64\ggml-rpc-server.exe"),
+...
+let dev_tunnel = workspace_root.join(r"spike\swarm-tunnel\target\release\swarm-tunnel.exe");
+```
+Danger & Impact:
+Fallback binary locations assume specific internal folder paths: `build-cuda\swarm_node.exe`, `dist\swarm-worker-windows-x64\ggml-rpc-server.exe`, and `spike\swarm-tunnel\target\release\swarm-tunnel.exe`. If the developer compiles using CMake into `build/` or uses debug builds, the supervisor fails to locate the binaries.
+Recommendation:
+Search PATH, `CMAKE_RUNTIME_OUTPUT_DIRECTORY`, and current executable directory before falling back to hardcoded folders.
+
+--------------------------------------------------------------------------------
+
+[FINDING-30]
+File: build_swarm.bat:18-22 & 25
+Category: Build Toolchain / Hardcoded Paths & CUDA Compute Architecture
+Severity: HIGH
+Code Snippet:
+```bat
+if exist "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" (
+    set "VCVARS=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+) else if exist "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" (
+    set "VCVARS=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+)
+...
+if not defined CUDA_ARCH set "CUDA_ARCH=61"
+```
+Danger & Impact:
+1. Assumes Visual Studio 2022 is installed under Community or BuildTools at fixed paths. If Professional or Enterprise is installed without `vswhere.exe` finding it, the script fails.
+2. Hardcodes `CUDA_ARCH=61` (Pascal / GTX 1050/1060). Building on modern GPUs (RTX 30 series / Ampere: compute 86; RTX 40 series / Ada: compute 89) causes CUDA kernels to run in slow JIT PTX emulation or fail if driver PTX compilation is disabled.
+Recommendation:
+Query `nvidia-smi` or `deviceQuery` to detect the actual compute architecture of the installed GPU.
+
+--------------------------------------------------------------------------------
+
+[FINDING-31]
+File: build_and_check.ps1:13 & 17
+Category: Build Script / Hardcoded Visual Studio Paths
+Severity: HIGH
+Code Snippet:
+```powershell
+cmd /c "call `"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat`" && cmake -S . -B build -G `"Visual Studio 17 2022`" -DGGML_CUDA=ON -DGGML_RPC=ON -DGGML_BACKEND_DL=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=61"
+```
+Danger & Impact:
+Directly hardcodes the 32-bit Program Files BuildTools path to `vcvars64.bat` and `-DCMAKE_CUDA_ARCHITECTURES=61`. Any developer or CI system with Visual Studio Community/Professional/Enterprise or a newer GPU architecture cannot run this build script.
+Recommendation:
+Use `vswhere.exe` and parameterize `-DCMAKE_CUDA_ARCHITECTURES`.
+
+--------------------------------------------------------------------------------
+
+[FINDING-32]
+File: spike/desktop-shell/src-tauri/src/supervisor/models/library.rs:10-11 & 514-630
+Category: Model Integrity / Missing Checksums for Remote Downloads
+Severity: HIGH
+Code Snippet:
+```rust
+const OFFICIAL_QWEN_FILENAME: &str = "qwen2.5-3b-instruct-q4_k_m.official-check.gguf";
+const OFFICIAL_QWEN_SHA256: &str = "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d";
+...
+CatalogModel {
+    id: "smollm2-135m-instruct-q4km".to_string(),
+    download_url: "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf".to_string(),
+    expected_sha256: None,
+    ...
+}
+```
+Danger & Impact:
+Only the official Qwen model has a verified SHA256 checksum (`OFFICIAL_QWEN_SHA256`). All other models in the curated catalog specify `expected_sha256: None`. When downloading from HuggingFace, if the download stream is corrupted, truncated, or tampered with by a malicious proxy, the file is saved and executed without any cryptographic integrity verification.
+Recommendation:
+Record authoritative SHA-256 hashes for all catalog models.
+
+================================================================================
+SECTION 6: HARDCODED LIMITS, RIGID THRESHOLDS & DOS RISKS
+================================================================================
+
+[FINDING-33]
+File: coordinator_http.cpp:264-268 & main.cpp:497-501
+Category: Denial of Service / Rigid Payload Size Limit
+Severity: MEDIUM
+Code Snippet:
+```cpp
+if (req.body.size() > 65536) {
+    res.status = 413;
+    res.set_content(json{{"error", "Payload Too Large: report exceeds 64KB limit"}}.dump(2), "application/json");
+    return;
+}
+```
+Danger & Impact:
+The HTTP coordinator drops any agent telemetry report larger than 64KB (`65536` bytes) with status 413. As clusters expand to include multiple GPUs, NUMA nodes, detailed CPU topology, or verbose diagnostics, valid reports exceed 64KB and get rejected.
+Recommendation:
+Increase payload threshold to at least 1MB or make it configurable via `SWARM_MAX_REPORT_SIZE`.
+
+--------------------------------------------------------------------------------
+
+[FINDING-34]
+File: inference_engine.cpp:208-210
+Category: Rigid Limits / Default Context Size Fallback
+Severity: MEDIUM
+Code Snippet:
+```cpp
+const int max_tokens_limit = config.ctx_size > 0 ? config.ctx_size : 4096;
+const int max_tokens = request_json.value("max_tokens", config.max_tokens_default);
+if (max_tokens < 1 || max_tokens > max_tokens_limit) { ... }
+```
+Danger & Impact:
+If `ctx_size` is not configured, the upper limit for generation is hardcoded to 4096. While improved from the previous 512-token ceiling, modern LLMs (e.g. Qwen 2.5 with 32k/128k context) support much longer output sequences.
+Recommendation:
+Bind maximum tokens to the active model's context capacity.
+
+--------------------------------------------------------------------------------
+
+[FINDING-35]
+File: main.cpp:555 & estimator.h:77
+Category: Observability / Rigid 30-Second Freshness Threshold
+Severity: MEDIUM
+Code Snippet:
+```cpp
+cd.is_stale = node.is_stale || (cd.telemetry_age_ms > 30000);
+```
+Danger & Impact:
+Node telemetry is marked stale if the elapsed time exceeds exactly 30 seconds (`30000` ms). Over high-latency cellular connections (4G/5G CGNAT) or unstable Wi-Fi, temporary jitter spikes cause the coordinator to falsely declare remote workers offline and drop them from inference plans.
+Recommendation:
+Make telemetry freshness TTL configurable via `SWARM_TELEMETRY_TTL_MS`.
+
+--------------------------------------------------------------------------------
+
+[FINDING-36]
+File: rpc_telemetry.cpp:55-58
+Category: Memory & Framing / Hardcoded Buffer Limits
+Severity: MEDIUM
+Code Snippet:
+```cpp
+constexpr size_t kMaxFrameSize = 1024ull * 1024ull * 1024ull;
+constexpr size_t kMaxBufferedPayload = 256ull * 1024ull * 1024ull;
+constexpr size_t kTensorPrefixBytes = sizeof(uint64_t) * 40;
+constexpr size_t kGraphCaptureBytes = 4ull * 1024ull * 1024ull;
+```
+Danger & Impact:
+Hardcodes maximum RPC frame size to 1 GiB and max buffered payload to 256 MiB. In massive transformer models (e.g. 70B+), individual tensor allocations exceed 1 GiB, causing the telemetry proxy to terminate the connection.
+Recommendation:
+Derive maximum frame sizes dynamically or stream large frames without buffering.
+
+--------------------------------------------------------------------------------
+
+[FINDING-37]
+File: rpc_telemetry.cpp:605
+Category: Timing / Hardcoded Flush Timeout
+Severity: LOW
+Code Snippet:
+```cpp
+RpcTelemetryStore::instance().flush(request_id, 500);
+```
+Danger & Impact:
+Draining queued RPC telemetry events has a hardcoded timeout of 500 ms. Over high-latency links, events are truncated and marked partial.
+Recommendation:
+Scale flush timeout dynamically based on measured round-trip time (`network_rtt_ms`).
+
+--------------------------------------------------------------------------------
+
+[FINDING-38]
+File: SwarmWorkerService.kt:62-64
+Category: Mobile Guardrails / Hardcoded Device Battery & Idle Thresholds
+Severity: MEDIUM
+Code Snippet:
+```kotlin
+private const val LOW_BATTERY_STOP_PCT = 15
+private const val GUARDRAIL_INTERVAL_MS = 60_000L
+private const val IDLE_LOCK_RELEASE_MS = 15 * 60 * 1000L
+```
+Danger & Impact:
+The Android background worker service terminates itself if the battery reaches 15% and is not charging, and releases CPU wake locks after exactly 15 minutes of inactivity. While intended as a safety guardrail, these thresholds cannot be adjusted by the user, causing compute to shut down even if the user deliberately wants to run on battery.
+Recommendation:
+Expose battery cutoff threshold and idle timeout in the Mobile Worker UI settings.
+
+--------------------------------------------------------------------------------
+
+[FINDING-39]
+File: SwarmWorkerService.kt:645
+Category: Network Buffer / Hardcoded UDP Buffer
+Severity: LOW
+Code Snippet:
+```kotlin
+val buf = ByteArray(256)
+```
+Danger & Impact:
+The discovery packet buffer is allocated with a fixed size of 256 bytes. If future discovery broadcast protocols append extra metadata or authentication tokens, packets exceeding 256 bytes will be silently truncated.
+Recommendation:
+Use standard UDP buffer size (e.g. 1024 or 2048 bytes).
+
+--------------------------------------------------------------------------------
+
+[FINDING-40]
+File: config.h:167-170
+Category: Configuration / Rigid Worker Management Constants
+Severity: LOW
+Code Snippet:
+```cpp
+max_local_workers(4),
+worker_startup_timeout_s(30),
+worker_health_check_interval_s(10),
+worker_connection_timeout_s(5)
+```
+Danger & Impact:
+Hardcoded limits for local workers: maximum 4 workers, 30s startup timeout, 10s health check interval, 5s connection timeout. On slow HDDs or overloaded machines, starting multiple RPC workers can exceed 30 seconds, causing false failure reports.
+Recommendation:
+Allow these timeouts to scale proportionally with system load or user configuration.
+
+--------------------------------------------------------------------------------
+
+[FINDING-41]
+File: ui/src/hooks/useSwarmSession.ts:145
+Category: Frontend Warnings / Rigid Headroom Threshold
+Severity: LOW
+Code Snippet:
+```typescript
+const hostRamHeadroomBytes = Math.max(300 * 1024 * 1024, hostRamTotal * 0.05);
+```
+Danger & Impact:
+Hardcodes host RAM headroom calculation to 5% of host RAM with a minimum of 300 MB. On systems with constrained RAM (4GB-8GB), this can trigger premature warning alerts.
+Recommendation:
+Derive warning thresholds from actual OS commit charge rather than arbitrary minimums.
+
+--------------------------------------------------------------------------------
+
+[FINDING-42]
+File: scripts/test_sprint3_logic.mjs:14, 29, 83
+Category: Test Fixtures / Hardcoded Memory Values
+Severity: LOW
+Code Snippet:
+```javascript
+const cpu = calculateBufferComposition(1695736136, 69206016, 10496246);
+const cuda = calculateBufferComposition(304590356, 2097152, 315359232);
+```
+Danger & Impact:
+Unit tests hardcode exact byte counts captured from a single test run on developer hardware.
+Recommendation:
+Parameterize test assertions against dynamic models and tolerances.
+
+================================================================================
+END OF AUDIT REPORT
+================================================================================

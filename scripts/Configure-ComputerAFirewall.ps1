@@ -1,7 +1,10 @@
 # Configure-ComputerAFirewall.ps1 - Elevate & Configure Inbound Firewall on Computer A
 # Run this script in an Elevated (Administrator) PowerShell window on Computer A.
 [CmdletBinding()]
-param()
+param(
+    [string]$RemoteAddress = "Any",
+    [string]$LocalAddress = "Any"
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -51,8 +54,8 @@ $newRule = New-NetFirewallRule -DisplayName "Swarm Coordinator - Hotspot B Restr
     -Action Allow `
     -Protocol TCP `
     -LocalPort 8080 `
-    -LocalAddress "192.168.137.174" `
-    -RemoteAddress "192.168.137.1" `
+    -LocalAddress $LocalAddress `
+    -RemoteAddress $RemoteAddress `
     -Program $targetExe `
     -Profile Public,Private `
     -Enabled True

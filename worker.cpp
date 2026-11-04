@@ -382,9 +382,26 @@ bool WorkerManager::start_local_workers() {
             worker.state = WorkerState::STARTING;
             worker.started_at = std::chrono::system_clock::now();
 
+            // Resolve full directory of current executable to prevent cwd binary hijacking
+            std::string full_rpc_exe = "ggml-rpc-server.exe";
+#ifdef _WIN32
+            char exe_dir[MAX_PATH] = {0};
+            if (GetModuleFileNameA(NULL, exe_dir, MAX_PATH) > 0) {
+                char* last_slash = strrchr(exe_dir, '\\');
+                if (last_slash) {
+                    *(last_slash + 1) = '\0';
+                    std::string adjacent = std::string(exe_dir) + "ggml-rpc-server.exe";
+                    DWORD attr = GetFileAttributesA(adjacent.c_str());
+                    if (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY)) {
+                        full_rpc_exe = adjacent;
+                    }
+                }
+            }
+#endif
+
             // Build command to start the RPC worker
             std::stringstream cmd;
-            cmd << "\"ggml-rpc-server.exe\" --host " << worker.host
+            cmd << "\"" << full_rpc_exe << "\" --host " << worker.host
                 << " --port " << worker.port;
 
             // ggml-rpc-server only supports -c/--cache as a flag. The cache
