@@ -147,7 +147,7 @@ struct SwarmConfig {
     // Constructor with defaults
     SwarmConfig() :
         model_path("models/qwen2.5-3b-instruct-q4_k_m.gguf"),
-        http_bind_address("0.0.0.0"),
+        http_bind_address("127.0.0.1"),
         http_port(8080),
         rpc_enabled(false),
         rpc_endpoint("127.0.0.1:50052"),

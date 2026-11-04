@@ -399,7 +399,26 @@ void InferenceEngine::handle_chat_completion(
         return;
     }
 
-    llama_sampler *sampler = llama_sampler_init_greedy();
+    const float temperature = request_json.value("temperature", 0.0f);
+    const float top_p = request_json.value("top_p", 1.0f);
+    const int32_t top_k = request_json.value("top_k", 40);
+
+    llama_sampler *sampler = nullptr;
+    if (temperature > 0.0f) {
+        auto sparams = llama_sampler_chain_default_params();
+        sampler = llama_sampler_chain_init(sparams);
+        if (top_k > 0) {
+            llama_sampler_chain_add(sampler, llama_sampler_init_top_k(top_k));
+        }
+        if (top_p < 1.0f && top_p > 0.0f) {
+            llama_sampler_chain_add(sampler, llama_sampler_init_top_p(top_p, 1));
+        }
+        llama_sampler_chain_add(sampler, llama_sampler_init_temp(temperature));
+        uint32_t seed = static_cast<uint32_t>(std::chrono::system_clock::now().time_since_epoch().count());
+        llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
+    } else {
+        sampler = llama_sampler_init_greedy();
+    }
     if (!sampler) {
         log_error("[" + std::to_string(request_id) + "] Sampler initialization failed");
         res.status = 500;

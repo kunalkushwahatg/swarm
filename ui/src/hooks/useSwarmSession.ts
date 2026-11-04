@@ -310,9 +310,12 @@ function useSwarmSessionState(pollIntervalMs: number): SwarmSession {
     const hostRamTotal = backendsData?.memory_accounting?.host_ram_total_bytes ?? 0;
     const hostRamAvail = backendsData?.memory_accounting?.host_ram_available_bytes ?? 0;
     const hasHostRamTelemetry = hostRamAvail > 0;
-    const isBelowReserve = hasHostRamTelemetry && hostRamAvail < DEFAULT_RESERVE_RAM;
+    const effectiveReserveRam = hostRamTotal > 0
+      ? Math.min(DEFAULT_RESERVE_RAM, Math.max(300 * 1024 * 1024, Math.round(hostRamTotal * 0.05)))
+      : DEFAULT_RESERVE_RAM;
+    const isBelowReserve = hasHostRamTelemetry && hostRamAvail < effectiveReserveRam;
     const availGb = (hostRamAvail / 1024 / 1024 / 1024).toFixed(2);
-    const reserveGb = (DEFAULT_RESERVE_RAM / 1024 / 1024 / 1024).toFixed(1);
+    const reserveGb = (effectiveReserveRam / 1024 / 1024 / 1024).toFixed(1);
     const reserveWarningText = !hasHostRamTelemetry
       ? "RAM headroom unavailable: the coordinator has not reported host memory telemetry."
       : isBelowReserve
@@ -370,7 +373,7 @@ function useSwarmSessionState(pollIntervalMs: number): SwarmSession {
         hostVramTotal != null && hostVramFree != null
           ? hostVramTotal - hostVramFree
           : undefined,
-      reserveBytes: DEFAULT_RESERVE_RAM,
+      reserveBytes: effectiveReserveRam,
       isBelowReserve,
       processors: hostProcessors,
       connectionAddress: hostConnection,
@@ -491,7 +494,7 @@ function useSwarmSessionState(pollIntervalMs: number): SwarmSession {
           : (nodeMatch?.ram_free_bytes?.value ?? nodeMatch?.ram_available?.value ?? w.memory_free_bytes ?? 0),
         vramTotalBytes: (nodeMatch?.vram_total_bytes?.value != null ? nodeMatch.vram_total_bytes.value : nodeMatch?.gpu_vram?.value) ?? undefined,
         vramFreeBytes: (nodeMatch?.vram_free_bytes?.value != null ? nodeMatch.vram_free_bytes.value : undefined),
-        reserveBytes: DEFAULT_RESERVE_RAM,
+        reserveBytes: effectiveReserveRam,
         isBelowReserve: isLoopback ? isBelowReserve : false,
         processors: [
           {
@@ -579,7 +582,7 @@ function useSwarmSessionState(pollIntervalMs: number): SwarmSession {
         totalKvBufferBytes: backendsData?.memory_accounting?.total_kv_buffer_bytes || 0,
         totalComputeBufferBytes: backendsData?.memory_accounting?.total_compute_buffer_bytes || 0,
         totalAllocatedBufferBytes: backendsData?.memory_accounting?.total_allocated_buffers_bytes || 0,
-        reserveBytes: DEFAULT_RESERVE_RAM,
+        reserveBytes: effectiveReserveRam,
         isBelowReserve,
         reserveWarningText,
       },

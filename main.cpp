@@ -516,7 +516,7 @@ int main() {
             intake_srv.Post("/api/v1/nodes/report", handle_intake);
             intake_srv.Post("/nodes/report", handle_intake);
             std::thread srv_th([&]() {
-                intake_srv.listen("0.0.0.0", config.http_port);
+                intake_srv.listen(config.http_bind_address.c_str(), config.http_port);
             });
             std::this_thread::sleep_for(std::chrono::milliseconds(config.discovery_timeout_ms));
             intake_srv.stop();
@@ -609,25 +609,50 @@ int main() {
     uint64_t hr_vram_bytes = config.headroom_vram_mb * 1024ULL * 1024ULL;
     uint64_t layer_cost = ConservativeCapacityEstimator::estimate_bytes_per_layer(config.ctx_size);
 
-    // The desktop supervisor passes the selected model's real GGUF layer count
-    // and per-layer cost. Without these, the native policy assumes a 36-block
-    // Qwen-class model and can reject a perfectly valid allocation for a
-    // smaller model (or over-allocate layers for a larger one).
-    int32_t model_transformer_layers = 36;
+    int32_t model_transformer_layers = 0;
     if (const char* raw_layers = std::getenv("SWARM_MODEL_TRANSFORMER_LAYERS")) {
         int32_t parsed_layers = 0;
         if (swarm_config_parse::parse_i32(raw_layers, parsed_layers) && parsed_layers > 0) {
             model_transformer_layers = parsed_layers;
-        } else {
-            log_warn("Ignoring invalid SWARM_MODEL_TRANSFORMER_LAYERS; using 36 transformer blocks");
         }
     }
+
+    if (model_transformer_layers == 0 && !config.model_path.empty()) {
+        struct gguf_init_params gparams = { true, nullptr };
+        struct gguf_context * ctx_gguf = gguf_init_from_file(config.model_path.c_str(), gparams);
+        if (ctx_gguf) {
+            for (const char* arch : {"qwen2", "llama", "phi3", "deepseek2", "gemma", "gemma2", "command-r", "mistral", "smollm", "smollm2"}) {
+                std::string key = std::string(arch) + ".block_count";
+                int kid = gguf_find_key(ctx_gguf, key.c_str());
+                if (kid >= 0) {
+                    model_transformer_layers = static_cast<int32_t>(gguf_get_val_u32(ctx_gguf, kid));
+                    log_info("Detected " + std::to_string(model_transformer_layers) + " transformer blocks from GGUF metadata (" + key + ")");
+                    break;
+                }
+            }
+            gguf_free(ctx_gguf);
+        }
+    }
+
+    if (model_transformer_layers <= 0) {
+        model_transformer_layers = 36;
+        log_warn("Falling back to default 36 transformer blocks");
+    }
+
     if (const char* raw_layer_cost = std::getenv("SWARM_ESTIMATED_BYTES_PER_LAYER")) {
         uint64_t parsed_layer_cost = 0;
         if (swarm_config_parse::parse_u64(raw_layer_cost, parsed_layer_cost) && parsed_layer_cost > 0) {
             layer_cost = parsed_layer_cost;
-        } else {
-            log_warn("Ignoring invalid SWARM_ESTIMATED_BYTES_PER_LAYER; using context-derived estimate");
+        }
+    } else if (model_transformer_layers > 0 && !config.model_path.empty()) {
+        std::ifstream file(config.model_path, std::ifstream::ate | std::ifstream::binary);
+        if (file.is_open()) {
+            uint64_t file_size = static_cast<uint64_t>(file.tellg());
+            if (file_size > 0) {
+                uint64_t weight_per_layer = file_size / static_cast<uint64_t>(model_transformer_layers + 1);
+                layer_cost = ConservativeCapacityEstimator::estimate_bytes_per_layer(config.ctx_size, weight_per_layer);
+                log_info("Derived layer cost from model file size: " + std::to_string(layer_cost) + " bytes/layer");
+            }
         }
     }
     log_info("Placement policy model profile: " + std::to_string(model_transformer_layers) +
@@ -837,7 +862,7 @@ int main() {
             }
             last_health_check = now;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
     log_info("Shutting down server...");

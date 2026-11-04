@@ -140,7 +140,7 @@ pub fn probe_remote_worker_endpoint_internal(host: &str, port: u16, timeout_ms: 
     let t0 = std::time::Instant::now();
     let trimmed_host = host.trim();
     let addr_str = format!("{}:{}", trimmed_host, port);
-    let timeout = std::time::Duration::from_millis(timeout_ms.min(1000).max(250));
+    let timeout = std::time::Duration::from_millis(timeout_ms.min(3500).max(250));
 
     // A paired worker is reached through a local tunnel dialer, so a plain TCP
     // connect only proves the dialer is alive. Probe the encrypted link itself

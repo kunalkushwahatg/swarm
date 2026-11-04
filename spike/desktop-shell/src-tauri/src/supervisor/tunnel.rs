@@ -179,7 +179,7 @@ pub fn start_dialer(
 
     // `dial` binds and announces before touching the network, so the port
     // opens within milliseconds even when the phone is still waking up.
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         if port_is_open(port) {
             let mut map = dialers().lock().unwrap();

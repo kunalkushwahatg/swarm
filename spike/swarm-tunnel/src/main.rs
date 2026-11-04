@@ -72,8 +72,12 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    let num_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(2)
+        .clamp(2, 4);
     let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
+        .worker_threads(num_threads)
         .enable_all()
         .build()?;
 
@@ -261,7 +265,7 @@ async fn bind_endpoint(
                 }
             }
         }
-        if !configured {
+        if !configured && std::env::var("SWARM_DISABLE_PUBLIC_DNS").is_err() {
             for ip in ["8.8.8.8", "1.1.1.1"] {
                 dns_builder = dns_builder.add_nameserver_config(
                     iroh::dns::NameserverConfig::udp(ip.parse().unwrap()).with_port(53),
