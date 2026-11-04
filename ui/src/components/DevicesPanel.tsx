@@ -207,6 +207,7 @@ export function DevicesPanel() {
     try {
       // If the engine is currently running, do not open a raw probe TCP socket,
       // which steals the single-client connection from the active coordinator.
+      // Report the serving state honestly instead of inventing latency numbers.
       if (isCoordinatorActive) {
         setWorkerProbeFeedback((prev) => ({
           ...prev,
@@ -214,18 +215,20 @@ export function DevicesPanel() {
             reachable: true,
             host,
             port,
-            latency_ms: prev[wId]?.latency_ms || 10,
-            status_state: "REACHABLE",
-            message: "Active in live cluster (Serving layers).",
+            // Keep a previously measured value only if we actually have one.
+            latency_ms: prev[wId]?.latency_ms,
+            status_state: "SERVING",
+            message: "Serving layers in the live cluster. Per-request RTT is shown in chat telemetry.",
             actionable_recovery: undefined,
-            protocol_version: "GGML RPC v7.0",
-            network_quality: prev[wId]?.network_quality || "Excellent (< 15 ms)",
-            link_type: prev[wId]?.link_type || "Direct Wi-Fi / LAN",
-            p50_ms: prev[wId]?.p50_ms || 10,
-            p95_ms: prev[wId]?.p95_ms || 15,
-            jitter_ms: prev[wId]?.jitter_ms || 1,
-            transport: "tcp",
+            protocol_version: prev[wId]?.protocol_version || "GGML RPC v7.0",
+            network_quality: "Live cluster",
+            link_type: prev[wId]?.link_type || "Encrypted tunnel",
+            p50_ms: prev[wId]?.p50_ms,
+            p95_ms: prev[wId]?.p95_ms,
+            jitter_ms: prev[wId]?.jitter_ms,
+            transport: prev[wId]?.transport || "tcp",
             candidates: prev[wId]?.candidates || [],
+            serving: true,
           },
         }));
         return;
@@ -871,6 +874,11 @@ export function DevicesPanel() {
                         <span style={{ color: "var(--color-text-3)", display: "block" }}>Network Latency (p50 / p95)</span>
                         <span className="mono" style={{ fontWeight: 600, color: probeFeedback?.reachable ? "var(--color-ok)" : "var(--color-text)" }}>
                           {(() => {
+                            if (probeFeedback?.serving) {
+                              return probeFeedback.p50_ms != null
+                                ? `${probeFeedback.p50_ms} ms p50 (last probe) · serving now`
+                                : "Serving · live RTT in chat telemetry";
+                            }
                             if (probeFeedback?.latency_ms == null) return "Probing…";
                             const lat = probeFeedback.latency_ms;
                             const tag = lat < 25 ? "Excellent" : lat < 75 ? "Good" : lat < 250 ? "Fair" : "High Latency";

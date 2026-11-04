@@ -168,6 +168,15 @@ pub fn start_dialer(
         .spawn()
         .map_err(|e| format!("Could not start the encrypted tunnel: {e}"))?;
 
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        if let Some(job) = crate::supervisor::job::get_global_job() {
+            let handle = child.as_raw_handle() as crate::supervisor::win32::HANDLE;
+            let _ = job.assign_process(handle);
+        }
+    }
+
     // `dial` binds and announces before touching the network, so the port
     // opens within milliseconds even when the phone is still waking up.
     let deadline = Instant::now() + Duration::from_secs(10);

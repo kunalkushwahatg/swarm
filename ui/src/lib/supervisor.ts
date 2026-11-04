@@ -102,7 +102,8 @@ export interface WorkerProbeResult {
   reachable: boolean;
   host: string;
   port: number;
-  latency_ms: number;
+  /** Omitted when a measurement was not taken (e.g. while the worker is serving). */
+  latency_ms?: number;
   status_state: "REACHABLE" | "CONNECTION_REFUSED" | "TIMED_OUT" | "INVALID_ADDRESS" | "ERROR" | string;
   message: string;
   actionable_recovery?: string;
@@ -114,6 +115,8 @@ export interface WorkerProbeResult {
   jitter_ms?: number;
   transport?: string;
   candidates?: TransportCandidate[];
+  /** True when the worker is already serving the live cluster (no probe taken). */
+  serving?: boolean;
 }
 
 export interface HostNetworkInfo {

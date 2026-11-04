@@ -32,6 +32,18 @@ pub struct JobObject {
 unsafe impl Send for JobObject {}
 unsafe impl Sync for JobObject {}
 
+static GLOBAL_JOB: std::sync::OnceLock<std::sync::Arc<JobObject>> = std::sync::OnceLock::new();
+
+/// Registers the supervisor's primary Job Object so helper processes like
+/// swarm-tunnel.exe can be assigned to it and reaped automatically on exit.
+pub fn set_global_job(job: std::sync::Arc<JobObject>) {
+    let _ = GLOBAL_JOB.set(job);
+}
+
+pub fn get_global_job() -> Option<std::sync::Arc<JobObject>> {
+    GLOBAL_JOB.get().cloned()
+}
+
 impl JobObject {
     /// Creates a new anonymous Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` enforced.
     pub fn new() -> Result<Self, JobError> {

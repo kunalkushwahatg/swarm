@@ -64,6 +64,11 @@ function MessageRow({
 
       {/* Message content */}
       <div
+        role="region"
+        aria-live={entry.streaming ? "polite" : "off"}
+        aria-atomic="false"
+        aria-busy={entry.streaming ? true : undefined}
+        aria-label={isUser ? "Your message" : "Swarm response"}
         style={{
           color: "var(--color-text)",
           fontSize: 13.5,
@@ -372,10 +377,12 @@ function ChatInput({
                 id="chat-max-tokens"
                 type="range"
                 min={32}
-                max={Math.min(2048, contextWindow || 2048)}
+                // Keep the UI in lockstep with the coordinator's hard ceiling
+                // (inference_engine.cpp rejects max_tokens > 512 with HTTP 400).
+                max={Math.min(512, contextWindow || 512)}
                 step={32}
-                value={maxTokens}
-                onChange={(e) => setMaxTokens(Number(e.target.value))}
+                value={Math.min(maxTokens, 512)}
+                onChange={(e) => setMaxTokens(Math.min(512, Number(e.target.value)))}
                 style={{ width: "100%", accentColor: "var(--color-accent)" }}
               />
             </div>
@@ -475,6 +482,7 @@ export function ChatPanel() {
   });
 
   const [queuedPrompt, setQueuedPrompt] = useState<{ text: string; maxTokens: number } | null>(null);
+  const [queueError, setQueueError] = useState<string | null>(null);
 
   const setInputText = (val: string) => {
     setInputTextState(val);
@@ -497,6 +505,7 @@ export function ChatPanel() {
     if (isReady && queuedPrompt) {
       const p = queuedPrompt;
       setQueuedPrompt(null);
+      setQueueError(null);
       sendMessage(p.text, p.maxTokens);
     }
   }, [isReady, queuedPrompt, sendMessage]);
@@ -509,16 +518,34 @@ export function ChatPanel() {
     }
 
     if (!isReady) {
-      // Auto-start engine and queue prompt
+      // Auto-start engine and queue prompt. The prompt is surfaced as a
+      // visible "queued" entry below so input can never disappear silently.
       setQueuedPrompt({ text: prompt, maxTokens });
+      setQueueError(null);
       try {
         await sup.startEngine(true);
       } catch (err) {
-        console.warn("Failed to auto-start engine on send:", err);
+        setQueueError(err instanceof Error ? err.message : String(err));
       }
     } else {
       sendMessage(prompt, maxTokens);
     }
+  };
+
+  const retryQueuedPrompt = async () => {
+    if (!queuedPrompt) return;
+    setQueueError(null);
+    try {
+      await sup.startEngine(true);
+    } catch (err) {
+      setQueueError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const discardQueuedPrompt = () => {
+    if (queuedPrompt) setInputText(queuedPrompt.text);
+    setQueuedPrompt(null);
+    setQueueError(null);
   };
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -1035,6 +1062,84 @@ export function ChatPanel() {
           ))}
           <div ref={bottomRef} />
         </div>
+
+        {/* Queued prompt: visible proof that a Standby-mode prompt was not lost */}
+        {queuedPrompt && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              margin: "0 0 8px 0",
+              padding: "10px 12px",
+              borderRadius: "var(--radius-sm)",
+              border: queueError
+                ? "1px solid rgba(185, 28, 28, 0.35)"
+                : "1px solid rgba(27, 94, 73, 0.25)",
+              background: queueError ? "rgba(185, 28, 28, 0.06)" : "var(--color-accent-subtle)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 11.5,
+                fontWeight: 600,
+                color: queueError ? "var(--color-error)" : "var(--color-accent)",
+              }}
+            >
+              {queueError ? <AlertCircle size={13} /> : <Loader2 size={13} className="animate-spin" />}
+              <span>
+                {queueError
+                  ? "Engine failed to start — your prompt is saved."
+                  : "Prompt queued · it will send as soon as the engine is ready."}
+              </span>
+            </div>
+            <div
+              className="mono"
+              style={{
+                fontSize: 11,
+                color: "var(--color-text-2)",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+              title={queuedPrompt.text}
+            >
+              “{queuedPrompt.text}”
+            </div>
+            {queueError && (
+              <div style={{ fontSize: 10.5, color: "var(--color-text-3)", lineHeight: 1.4 }}>
+                {queueError}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+              {queueError && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={retryQueuedPrompt}
+                  disabled={sup.isStarting}
+                  style={{ padding: "4px 10px", fontSize: 11.5 }}
+                >
+                  <RefreshCw size={11} className={sup.isStarting ? "animate-spin" : undefined} />
+                  <span>{sup.isStarting ? "Retrying…" : "Retry Start"}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={discardQueuedPrompt}
+                style={{ padding: "4px 10px", fontSize: 11.5 }}
+              >
+                <span>{queueError ? "Move Back to Composer" : "Cancel"}</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Anchored Composer within the column */}
         <ChatInput

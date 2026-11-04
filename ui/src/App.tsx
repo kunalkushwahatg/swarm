@@ -7,6 +7,7 @@ import { SessionPanel } from "./components/SessionPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkerPanel } from "./components/WorkerPanel";
 import { ModelLibraryPanel } from "./components/models/ModelLibraryPanel";
+import { GlobalModelSwitchDialog } from "./components/models/GlobalModelSwitchDialog";
 import { ClusterStartupModal } from "./components/ClusterStartupModal";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SupervisorProvider } from "./hooks/useSupervisor";
@@ -61,6 +62,9 @@ function AppContent() {
 
       {/* Cluster Startup & Model Streaming HUD */}
       <ClusterStartupModal />
+
+      {/* In-place model switch confirmation (keeps current view intact) */}
+      <GlobalModelSwitchDialog />
 
       {/* Responsive layout container */}
       <div className="app-body">

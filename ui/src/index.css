@@ -11,10 +11,10 @@
   --color-border-strong: #C7CEBF;
 
   --color-text: #202821;
-  --color-text-2: #66716A;
+  --color-text-2: #4A544D;
   /* Metadata text must clear WCAG AA 4.5:1 on the recessed well (#F0F2EC).
-     #818A83 measured ~3.16:1; #5C655E measures ~5.1:1. */
-  --color-text-3: #5C655E;
+     #4A544D measures ~6.9:1 and #59635B measures ~5.5:1 on that well. */
+  --color-text-3: #59635B;
 
   --color-accent: #1B5E49;
   --color-accent-fg: #FFFFFF;
@@ -89,8 +89,8 @@
     --color-border-strong:    #C7CEBF;   /* structural input/outline borders */
 
     --color-text:             #202821;   /* primary graphite ink */
-    --color-text-2:           #66716A;   /* secondary technical text */
-    --color-text-3:           #5C655E;   /* subdued metadata / labels (AA on wells) */
+    --color-text-2:           #4A544D;   /* secondary technical text (~6.9:1 on wells) */
+    --color-text-3:           #59635B;   /* subdued metadata / labels (~5.5:1 on wells) */
 
     /* Device & Backend Identities */
     --color-accent:           #1B5E49;   /* primary forest-green accent */
@@ -1238,6 +1238,24 @@
 
 .rpc-table-detail {
   min-width: 820px;
+}
+
+/* Narrow viewports: reduce the forced scroll width and keep momentum scrolling
+   so the rightmost latency columns stay reachable on tablets and small windows. */
+@media (max-width: 768px) {
+  .rpc-table {
+    min-width: 560px;
+  }
+
+  .rpc-table-detail {
+    min-width: 640px;
+  }
+
+  .rpc-table-wrap {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-gutter: stable;
+  }
 }
 
 .rpc-table-detail th {

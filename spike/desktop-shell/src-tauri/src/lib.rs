@@ -64,6 +64,7 @@ pub fn run() {
     }
 
     let job = Arc::new(JobObject::new().expect("Failed to initialize Windows Job Object"));
+    supervisor::job::set_global_job(Arc::clone(&job));
     let manager = Arc::new(ProcessManager::new(Arc::clone(&job)));
     let orchestrator = Arc::new(supervisor::Orchestrator::new(Arc::clone(&manager)));
     let workspace_root = match std::env::var("SWARM_WORKSPACE_ROOT") {

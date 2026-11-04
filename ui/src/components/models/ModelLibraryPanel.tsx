@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Compass,
   HardDrive,
@@ -34,10 +34,19 @@ export const ModelLibraryPanel: React.FC = () => {
     hfSearching,
     clearHfSearch,
     verifyChecksum,
+    refreshLibrary,
     pendingModelSelect,
     dismissPendingSelect,
     confirmPendingSelectRestart,
   } = useModelLibrary();
+
+  useEffect(() => {
+    const handleRefresh = () => {
+      void refreshLibrary();
+    };
+    window.addEventListener("swarm-model-library-refresh", handleRefresh);
+    return () => window.removeEventListener("swarm-model-library-refresh", handleRefresh);
+  }, [refreshLibrary]);
 
   const installedCount = libraryState?.installed_models.length || 0;
   const activeDownloads = libraryState?.active_downloads || [];

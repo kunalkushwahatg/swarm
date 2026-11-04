@@ -122,6 +122,22 @@ void setup_coordinator_routes(
     MetricsCollector& metrics,
     std::atomic<bool>& g_running
 ) {
+    // Security: Protect against DNS rebinding and cross-site request forgery.
+    // The coordinator's API gateway must only accept loopback Host headers.
+    server.set_pre_routing_handler([](const httplib::Request &req, httplib::Response &res) {
+        if (req.has_header("Host")) {
+            std::string host = req.get_header_value("Host");
+            if (host.find("127.0.0.1") == std::string::npos &&
+                host.find("localhost") == std::string::npos &&
+                host.find("::1") == std::string::npos) {
+                res.status = 403;
+                res.set_content("{\"error\":\"Forbidden: Invalid Host header\"}", "application/json");
+                return httplib::Server::HandlerResponse::Handled;
+            }
+        }
+        return httplib::Server::HandlerResponse::Unhandled;
+    });
+
     // Health endpoint
     server.Get("/health", [&](const httplib::Request &req, httplib::Response &res) {
         json health_status;

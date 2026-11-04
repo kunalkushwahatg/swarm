@@ -33,6 +33,7 @@ models/*.bin
 build/
 build-*/
 build_*/
+.build-*/
 temp_*/
 /bin/
 /obj/

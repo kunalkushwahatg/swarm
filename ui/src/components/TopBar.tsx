@@ -109,9 +109,9 @@ export function TopBar({ onSelectView }: TopBarProps) {
       setIsDropdownOpen(false);
       const isEngineActive = sup.engineStatus?.coord_healthy === true || session.state === "ready" || session.state === "generating";
       if (isEngineActive) {
-        // Direct to models view and trigger the switch confirmation modal
-        onSelectView?.("models");
-        window.dispatchEvent(new CustomEvent("swarm-request-model-switch", { detail: model.id }));
+        // Keep the operator on their current view. The confirmation dialog is
+        // rendered at app level as an overlay (no jarring navigation).
+        window.dispatchEvent(new CustomEvent("swarm-open-model-switch-dialog", { detail: model }));
         return;
       }
       // Instant switch in Standby mode

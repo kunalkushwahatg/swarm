@@ -203,8 +203,9 @@ static bool is_process_tcp_connected_to_endpoint(const std::string& host, uint16
 }
 #endif
 
-// Helper function to check if a worker is reachable via TCP
-bool is_worker_reachable(const std::string& host, uint16_t port, int timeout_ms = 5000) {
+// Helper function to check if a worker is reachable via TCP.
+// Defaults to 800 ms so offline remote workers never block coordinator route handlers.
+bool is_worker_reachable(const std::string& host, uint16_t port, int timeout_ms = 800) {
 #ifdef _WIN32
     if (is_loopback_host(host)) {
         return is_local_port_listening(port);

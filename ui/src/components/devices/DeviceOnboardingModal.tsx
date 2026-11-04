@@ -282,13 +282,14 @@ export function DeviceOnboardingModal({
   };
 
   // Pair worker via 6-digit code or link over the encrypted tunnel
-  const handlePairWorker = async () => {
+  const handlePairWorker = async (codeOverride?: string) => {
     setIsPairingCodeSubmitting(true);
     setPairingError(null);
     setIsProbing(true);
     setProbeResult(null);
     try {
-      const res = await supervisor.pairWorker(cleanPairCode, workerName.trim() || undefined);
+      const code = (codeOverride ?? cleanPairCode).trim();
+      const res = await supervisor.pairWorker(code, workerName.trim() || undefined);
       if (!res.success) {
         setPairingError(res.message);
         return;
@@ -405,7 +406,7 @@ export function DeviceOnboardingModal({
                 {[
                   { step: 1, label: "Choose Method" },
                   { step: 2, label: "Enter Details" },
-                  { step: 3, label: "Check Connection" },
+                  { step: 3, label: "Verify Link" },
                   { step: 4, label: "Start Worker" },
                   { step: 5, label: "Complete" },
                 ].map((s) => {
@@ -729,12 +730,24 @@ export function DeviceOnboardingModal({
                       <input
                         id="pairing-code-input"
                         type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
                         value={pairingCodeInput}
                         onChange={(e) => {
-                          setPairingCodeInput(e.target.value);
+                          const raw = e.target.value;
+                          // Preserve a pasted pairing link, otherwise keep digits
+                          // only so spaces/dashes never cause validation errors.
+                          const next =
+                            raw.includes("://") || raw.toLowerCase().startsWith("swarm:")
+                              ? raw
+                              : raw.replace(/\D/g, "").slice(0, 6);
+                          setPairingCodeInput(next);
                           setPairingError(null);
+                          if (/^\d{6}$/.test(next) && !isPairingCodeSubmitting) {
+                            void handlePairWorker(next);
+                          }
                         }}
-                        placeholder="e.g. 742 918"
+                        placeholder="e.g. 742918"
                         autoFocus
                         style={{
                           width: "100%",
@@ -1043,7 +1056,7 @@ export function DeviceOnboardingModal({
                     <button
                       className="btn-primary"
                       disabled={!isFormValid || isPairingCodeSubmitting}
-                      onClick={handlePairWorker}
+                      onClick={() => void handlePairWorker()}
                       style={{
                         padding: "7px 18px",
                         fontSize: 13,
@@ -1118,7 +1131,10 @@ export function DeviceOnboardingModal({
                       <span>Network Connection Verified!</span>
                     </div>
                     <div style={{ fontSize: 12.5, color: "var(--color-text)", lineHeight: 1.45 }}>
-                      Successfully reached <span className="mono">{cleanIp}:{portNum}</span> in <span className="mono">{probeResult.latency_ms} ms</span>.
+                      Successfully reached <span className="mono">{cleanIp}:{portNum}</span>
+                      {probeResult.latency_ms != null
+                        ? <> in <span className="mono">{probeResult.latency_ms} ms</span></>
+                        : null}.
                       {" "}The remote worker is reachable and its RPC port is listening.
                     </div>
                   </div>
@@ -1142,6 +1158,22 @@ export function DeviceOnboardingModal({
 
                     <div style={{ fontSize: 12.5, color: "var(--color-text-2)", lineHeight: 1.45 }}>
                       {probeResult?.message || `Could not establish a TCP connection to ${cleanIp}:${portNum}.`}
+                    </div>
+
+                    <div
+                      style={{
+                        background: "var(--color-surface)",
+                        padding: "10px 12px",
+                        borderRadius: "var(--radius-sm)",
+                        border: "1px solid var(--color-border)",
+                        fontSize: 12,
+                        color: "var(--color-text)",
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      <strong>Haven't started the worker yet?</strong> That's expected — this step only
+                      verifies the link. Continue to the next step to launch the worker, then come back
+                      here and re-check.
                     </div>
 
                     {/* The backend recovery text is Windows-firewall specific. Showing it

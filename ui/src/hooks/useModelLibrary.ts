@@ -269,6 +269,7 @@ export function useModelLibrary() {
       setHfSearchRepo("");
     },
     verifyChecksum,
+    refreshLibrary: fetchLibrary,
     pendingModelSelect,
     dismissPendingSelect: () => setPendingModelSelect(null),
     confirmPendingSelectRestart: async () => {

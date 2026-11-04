@@ -7,10 +7,12 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.Network
 import android.net.wifi.WifiManager
+import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -34,7 +36,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Foreground service that turns this device into a Swarm compute worker.
  *
  * It owns two native child processes shipped in jniLibs:
- *  - libggml_rpc.so     : GGML RPC server bound to 0.0.0.0:50052
+ *  - libggml_rpc.so     : GGML RPC server bound to 127.0.0.1:50052 (loopback only)
  *  - libswarm_tunnel.so : encrypted relay tunnel to 127.0.0.1:50052
  *
  * The Tauri Rust backend drives it through [dispatch] over JNI, which keeps the
@@ -54,6 +56,14 @@ class SwarmWorkerService : Service() {
         // LAN discovery: the coordinator broadcasts a probe, this device answers.
         private const val DISCOVERY_PORT = 50053
         private const val DISCOVERY_MAGIC = "SWARM_DISCOVER"
+
+        // Battery / thermal / idle guardrails. Sharing compute must never drain a
+        // phone to 0% or cook it just because the user forgot to stop sharing.
+        private const val LOW_BATTERY_STOP_PCT = 15
+        private const val GUARDRAIL_INTERVAL_MS = 60_000L
+        private const val IDLE_LOCK_RELEASE_MS = 15 * 60 * 1000L
+        private const val THERMAL_STATUS_SEVERE = 3
+        private const val THERMAL_STATUS_CRITICAL = 4
 
         const val ACTION_START = "com.swarm.desktop.worker.START"
         const val ACTION_STOP = "com.swarm.desktop.worker.STOP"
@@ -352,6 +362,10 @@ class SwarmWorkerService : Service() {
     private var discoverySocket: DatagramSocket? = null
     private val shouldRun = AtomicBoolean(false)
     private val shouldRunLeader = AtomicBoolean(false)
+    private var lastGuardrailCheckMs = 0L
+    private var lastRpcActivityMs = System.currentTimeMillis()
+    private var idleLocksReleased = false
+    private var thermalWarned = false
 
     override fun onCreate() {
         super.onCreate()
@@ -429,6 +443,10 @@ class SwarmWorkerService : Service() {
         state = "Starting"
         startedAtMs = System.currentTimeMillis()
         lastError = null
+        lastRpcActivityMs = System.currentTimeMillis()
+        idleLocksReleased = false
+        lastGuardrailCheckMs = 0L
+        thermalWarned = false
         // A fresh six-digit code per sharing session lets a remote desktop
         // derive this device's tunnel identity without any account or VPN.
         pairingCode = String.format("%06d", java.security.SecureRandom().nextInt(1_000_000))
@@ -450,13 +468,13 @@ class SwarmWorkerService : Service() {
 
         val rpcArgs = mutableListOf<String>()
         rpcArgs += rpcBin.absolutePath
-        rpcArgs += listOf("-H", "0.0.0.0", "-p", requestedPort.toString())
+        rpcArgs += listOf("-H", "127.0.0.1", "-p", requestedPort.toString())
         if (useGpu) {
             rpcArgs += listOf("-d", "Vulkan0")
-            log("Launching ggml-rpc-server on 0.0.0.0:$requestedPort (Vulkan0)")
+            log("Launching ggml-rpc-server on 127.0.0.1:$requestedPort (Vulkan0)")
         } else {
             rpcArgs += listOf("-d", "CPU", "-t", nThreads.toString())
-            log("Launching ggml-rpc-server on 0.0.0.0:$requestedPort (CPU, $nThreads threads)")
+            log("Launching ggml-rpc-server on 127.0.0.1:$requestedPort (CPU, $nThreads threads)")
         }
 
         val rpcBuilder = ProcessBuilder(rpcArgs)
@@ -492,7 +510,7 @@ class SwarmWorkerService : Service() {
                 updateNotification(
                     if (useGpu) "Active node · Vulkan0 GPU" else "Active node · $nThreads CPU threads"
                 )
-                log("RPC worker listening on 0.0.0.0:$requestedPort")
+                log("RPC worker listening on 127.0.0.1:$requestedPort (Loopback Only, Encrypted Tunnel Authenticated)")
             } else {
                 state = "Failed"
                 lastError = "RPC server did not accept connections on port $requestedPort"
@@ -521,6 +539,7 @@ class SwarmWorkerService : Service() {
                 if (tunnelProcess?.isAlive == false) {
                     log("swarm-tunnel exited; worker remains reachable directly on the LAN")
                 }
+                monitorGuardrails()
                 Thread.sleep(1500)
             }
         } catch (t: Throwable) {
@@ -686,6 +705,104 @@ class SwarmWorkerService : Service() {
         wakeLock = null
     }
 
+    /**
+     * Periodic, cheap device-protection checks.
+     *
+     * - Low battery (<15%, unplugged) stops sharing instead of draining to 0%.
+     * - Critical thermal status stops sharing; severe status raises a warning.
+     * - After 15 minutes with no RPC client, wake locks are released so an idle
+     *   phone can sleep. They are reacquired automatically on the next client.
+     */
+    private fun monitorGuardrails() {
+        val now = System.currentTimeMillis()
+        // Check more often while idle so wake locks are reacquired promptly when
+        // a client reconnects.
+        val interval = if (idleLocksReleased) 30_000L else GUARDRAIL_INTERVAL_MS
+        if (now - lastGuardrailCheckMs < interval) return
+        lastGuardrailCheckMs = now
+
+        if (running && shouldRun.get()) {
+            val hasClient = hasEstablishedRpcConnection(port)
+            if (hasClient) {
+                lastRpcActivityMs = now
+                if (idleLocksReleased) {
+                    acquireLocks()
+                    idleLocksReleased = false
+                    log("RPC client reconnected — wake locks reacquired")
+                }
+            } else if (!idleLocksReleased && now - lastRpcActivityMs >= IDLE_LOCK_RELEASE_MS) {
+                releaseLocks()
+                idleLocksReleased = true
+                log("No RPC client for 15 min — released wake locks to save battery")
+                updateNotification("Idle · listening (wake locks released)")
+            }
+        }
+
+        val (batteryPct, charging) = readBattery()
+        if (batteryPct in 0..LOW_BATTERY_STOP_PCT && !charging) {
+            lastError = "Auto-stopped at ${batteryPct}% battery to protect the device"
+            log(lastError!!)
+            updateNotification("Auto-stopped · battery ${batteryPct}%")
+            shutdown()
+            stopSelf()
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            val thermal = pm?.currentThermalStatus ?: 0
+            when {
+                thermal >= THERMAL_STATUS_CRITICAL -> {
+                    lastError = "Auto-stopped: device thermal status critical"
+                    log(lastError!!)
+                    updateNotification("Auto-stopped · device too hot")
+                    shutdown()
+                    stopSelf()
+                }
+                thermal >= THERMAL_STATUS_SEVERE && !thermalWarned -> {
+                    thermalWarned = true
+                    log("Thermal status SEVERE — inference will be throttled by Android")
+                    updateNotification("Thermal warning · device is hot")
+                }
+                thermal < THERMAL_STATUS_SEVERE -> thermalWarned = false
+            }
+        }
+    }
+
+    private fun readBattery(): Pair<Int, Boolean> {
+        return try {
+            val intent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+            val status = intent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val pct = if (level >= 0 && scale > 0) level * 100 / scale else -1
+            val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                status == BatteryManager.BATTERY_STATUS_FULL
+            pct to charging
+        } catch (t: Throwable) {
+            Log.w(TAG, "Battery read failed: ${t.message}")
+            -1 to true
+        }
+    }
+
+    /** Reads /proc/net/tcp{,6} for an ESTABLISHED (state 01) socket on [targetPort]. */
+    private fun hasEstablishedRpcConnection(targetPort: Int): Boolean {
+        val hexPort = String.format("%04X", targetPort)
+        for (path in listOf("/proc/net/tcp", "/proc/net/tcp6")) {
+            try {
+                for (line in File(path).readLines()) {
+                    val parts = line.trim().split(Regex("\\s+"))
+                    if (parts.size > 3 && parts[3] == "01" && parts[1].endsWith(":$hexPort")) {
+                        return true
+                    }
+                }
+            } catch (_: Throwable) {
+                // /proc may be unavailable on hardened builds; idle release is best-effort.
+            }
+        }
+        return false
+    }
+
     private fun superviseLeader(
         modelPath: String,
         port: Int,
@@ -754,6 +871,7 @@ class SwarmWorkerService : Service() {
                     }
                     break
                 }
+                monitorGuardrails()
                 Thread.sleep(1500)
             }
         } catch (t: Throwable) {
