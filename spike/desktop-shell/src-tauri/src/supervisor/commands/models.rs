@@ -172,6 +172,11 @@ pub async fn models_select_model(
             .map(|s| s.split_weight.unwrap_or(0.0))
             .sum();
 
+        // Reset layer offload count so the new model defaults to 100% capacity
+        // instead of retaining an arbitrary layer cap from a different model.
+        alloc.total_offload_layers = -1;
+        alloc.mode = "automatic".to_string();
+
         if total_active_weight > 0.0 {
             for s in &mut alloc.device_settings {
                 if s.enabled {
@@ -180,12 +185,12 @@ pub async fn models_select_model(
                     s.memory_budget_mb = desired_layers * mb_per_layer + mb_per_layer;
                 }
             }
-            alloc.updated_at_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
-            let _ = crate::supervisor::planning::save_allocation_config(&state.workspace_root, &alloc);
         }
+        alloc.updated_at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let _ = crate::supervisor::planning::save_allocation_config(&state.workspace_root, &alloc);
     }
 
     if is_running && do_restart {

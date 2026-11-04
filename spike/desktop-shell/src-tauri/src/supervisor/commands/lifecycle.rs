@@ -78,15 +78,13 @@ pub fn build_standalone_cuda_coordinator_env_with_allocation(
     model_path: &std::path::Path,
     allocation_config: Option<&crate::supervisor::planning::ComputeAllocationConfig>,
 ) -> Vec<(String, String)> {
+    // Standalone CUDA runs directly on the local host GPU. Unless the operator
+    // explicitly set a manual layer constraint, default to -1 (all layers to GPU).
     let (n_gpu_layers, ctx_size) = match allocation_config {
-        Some(alloc) => {
-            let layers = if alloc.total_offload_layers >= 0 {
-                alloc.total_offload_layers.to_string()
-            } else {
-                "-1".to_string()
-            };
-            (layers, alloc.context_size.to_string())
+        Some(alloc) if alloc.mode == "manual" && alloc.total_offload_layers > 0 => {
+            (alloc.total_offload_layers.to_string(), alloc.context_size.to_string())
         }
+        Some(alloc) => ("-1".to_string(), alloc.context_size.to_string()),
         None => ("-1".to_string(), "512".to_string()),
     };
 
