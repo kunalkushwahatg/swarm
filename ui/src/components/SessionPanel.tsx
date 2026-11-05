@@ -63,13 +63,15 @@ export function SessionPanel() {
   })();
 
   const vramTotal = hostGpu?.vramTotalBytes || (hardware?.total_vram_mb ? hardware.total_vram_mb * 1024 * 1024 : 0);
-  const vramUsed = hostGpu?.vramUsedBytes || (hardware && hardware.total_vram_mb != null && hardware.available_vram_mb != null ? Math.max(0, (hardware.total_vram_mb - hardware.available_vram_mb) * 1024 * 1024) : 0);
+  const vramUsedRaw = hostGpu?.vramUsedBytes || (hardware && hardware.total_vram_mb != null && hardware.available_vram_mb != null ? Math.max(0, (hardware.total_vram_mb - hardware.available_vram_mb) * 1024 * 1024) : 0);
+  const vramUsed = vramTotal > 0 ? Math.min(vramUsedRaw, vramTotal) : vramUsedRaw;
   const vramFree = Math.max(0, vramTotal - vramUsed);
   const vramPct = vramTotal > 0 ? Math.min(100, Math.round((vramUsed / vramTotal) * 100)) : 0;
 
   const ramTotal = (memory.hostRamTotalBytes > 0 ? memory.hostRamTotalBytes : (hardware?.total_ram_mb ? hardware.total_ram_mb * 1024 * 1024 : 0));
-  const ramAvail = (memory.hostRamAvailableBytes > 0 ? memory.hostRamAvailableBytes : (hardware?.available_ram_mb ? hardware.available_ram_mb * 1024 * 1024 : 0));
-  const ramUsed = Math.max(0, ramTotal - ramAvail);
+  const ramAvailRaw = (memory.hostRamAvailableBytes > 0 ? memory.hostRamAvailableBytes : (hardware?.available_ram_mb ? hardware.available_ram_mb * 1024 * 1024 : 0));
+  const ramUsed = ramTotal > 0 ? Math.max(0, ramTotal - Math.min(ramAvailRaw, ramTotal)) : 0;
+  const ramFree = Math.max(0, ramTotal - ramUsed);
   const ramPct = ramTotal > 0 ? Math.min(100, Math.round((ramUsed / ramTotal) * 100)) : 0;
 
   return (
@@ -384,7 +386,7 @@ export function SessionPanel() {
             </div>
 
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--color-text-3)" }}>
-              <span>{ramTotal > 0 ? `${fmtBytes(ramAvail)} available` : "RAM telemetry unavailable"}</span>
+              <span>{ramTotal > 0 ? `${fmtBytes(ramFree)} free` : "RAM telemetry unavailable"}</span>
               <span>1,024 MB reserved headroom</span>
             </div>
           </div>

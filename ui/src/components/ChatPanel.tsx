@@ -613,6 +613,8 @@ export function ChatPanel() {
               padding: "10px 18px 8px 18px",
               borderBottom: "1px solid var(--color-border)",
               background: "var(--color-bg)",
+              position: "relative",
+              zIndex: 10,
             }}
           >
             <PlacementRibbon
@@ -621,6 +623,7 @@ export function ChatPanel() {
               compact={true}
               showCaption={true}
               isOffline={session.isCoordinatorOffline}
+              tooltipPlacement="bottom"
             />
           </div>
         )}

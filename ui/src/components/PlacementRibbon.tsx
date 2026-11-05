@@ -9,6 +9,7 @@ interface PlacementRibbonProps {
   showCaption?: boolean;
   compact?: boolean;
   isOffline?: boolean;
+  tooltipPlacement?: "top" | "bottom";
 }
 
 export function PlacementRibbon({
@@ -17,6 +18,7 @@ export function PlacementRibbon({
   showCaption = true,
   compact = false,
   isOffline = false,
+  tooltipPlacement = "bottom",
 }: PlacementRibbonProps) {
   const [selectedBackendId, setSelectedBackendId] = useState<string | null>(null);
   const [hoveredBackendId, setHoveredBackendId] = useState<string | null>(null);
@@ -133,7 +135,9 @@ export function PlacementRibbon({
                   className="placement-segment-tooltip"
                   style={{
                     position: "absolute",
-                    bottom: "calc(100% + 8px)",
+                    ...(tooltipPlacement === "bottom"
+                      ? { top: "calc(100% + 8px)" }
+                      : { bottom: "calc(100% + 8px)" }),
                     left: "50%",
                     transform: "translateX(-50%)",
                     background: "#1C2024",
@@ -156,18 +160,27 @@ export function PlacementRibbon({
                   <div style={{ fontSize: 10.5, color: "#D1D5DB", marginTop: 2 }}>
                     {seg.layerCount} layers · Click to inspect details
                   </div>
-                  {/* Downward triangle arrow */}
+                  {/* Triangle arrow */}
                   <div
                     style={{
                       position: "absolute",
-                      top: "100%",
+                      ...(tooltipPlacement === "bottom"
+                        ? {
+                            bottom: "100%",
+                            borderBottom: "5px solid #1C2024",
+                            borderTop: "none",
+                          }
+                        : {
+                            top: "100%",
+                            borderTop: "5px solid #1C2024",
+                            borderBottom: "none",
+                          }),
                       left: "50%",
                       transform: "translateX(-50%)",
                       width: 0,
                       height: 0,
                       borderLeft: "5px solid transparent",
                       borderRight: "5px solid transparent",
-                      borderTop: "5px solid #1C2024",
                     }}
                   />
                 </div>

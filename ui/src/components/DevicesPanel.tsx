@@ -50,6 +50,128 @@ function formatStartupError(msg: string | null): string {
     .trim() || msg;
 }
 
+interface HardwareMeterProps {
+  label: string;
+  used: number;
+  total: number;
+  color: string;
+  warn?: boolean;
+  /** Muted right-hand note under the bar (device name, reserve, etc.). */
+  note?: string;
+  noteWarn?: boolean;
+  loadingLabel: string;
+  emptyLabel: string;
+}
+
+/** Single source of truth for a hardware meter: used, total, percent and free
+ *  are always derived from the same pair of numbers so they cannot disagree. */
+function HardwareMeter({
+  label,
+  used,
+  total,
+  color,
+  warn = false,
+  note,
+  noteWarn = false,
+  loadingLabel,
+  emptyLabel,
+}: HardwareMeterProps) {
+  const clampUsed = total > 0 ? Math.min(Math.max(0, used), total) : 0;
+  const pct = total > 0 ? Math.min(100, Math.round((clampUsed / total) * 100)) : 0;
+  const free = Math.max(0, total - clampUsed);
+
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: 10,
+          marginBottom: 6,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10.5,
+            fontWeight: 600,
+            letterSpacing: "0.04em",
+            textTransform: "uppercase",
+            color: "var(--color-text-3)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {label}
+        </span>
+        <span
+          className="mono"
+          style={{ fontSize: 11.5, color: "var(--color-text)", whiteSpace: "nowrap" }}
+        >
+          {total > 0 ? (
+            <>
+              {fmtBytes(clampUsed)}
+              <span style={{ color: "var(--color-text-3)" }}> / {fmtBytes(total)}</span>
+              <span style={{ color: "var(--color-text-3)" }}> · {pct}%</span>
+            </>
+          ) : (
+            loadingLabel
+          )}
+        </span>
+      </div>
+
+      <div
+        style={{
+          width: "100%",
+          height: 6,
+          background: "var(--color-surface-sunken)",
+          borderRadius: 999,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            height: "100%",
+            width: `${pct}%`,
+            background: warn ? "var(--color-warn)" : color,
+            borderRadius: 999,
+            transition: "width 300ms ease",
+          }}
+        />
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: 10,
+          marginTop: 6,
+          fontSize: 11,
+          color: "var(--color-text-3)",
+        }}
+      >
+        <span style={{ whiteSpace: "nowrap" }}>{total > 0 ? `${fmtBytes(free)} free` : emptyLabel}</span>
+        {total > 0 && note && (
+          <span
+            title={note}
+            style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              maxWidth: "65%",
+              textAlign: "right",
+              color: noteWarn ? "var(--color-warn)" : "var(--color-text-3)",
+              fontWeight: noteWarn ? 600 : 400,
+            }}
+          >
+            {note}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DevicesPanel() {
   const session = useSwarmSession(3000);
   const {
@@ -344,16 +466,19 @@ export function DevicesPanel() {
   const hostRamTotal = session.hostDevice?.ramTotalBytes
     || session.memoryAccounting?.hostRamTotalBytes
     || (hardware?.total_ram_mb ? hardware.total_ram_mb * 1024 * 1024 : 0);
-  const hostRamAvail = session.hostDevice?.ramFreeBytes
+  const hostRamAvailRaw = session.hostDevice?.ramFreeBytes
     || session.memoryAccounting?.hostRamAvailableBytes
     || (hardware?.available_ram_mb ? hardware.available_ram_mb * 1024 * 1024 : 0);
-  const hostRamUsed = Math.max(0, hostRamTotal - hostRamAvail);
+  // Never let a stale/live mismatch report more free memory than exists.
+  const hostRamUsed = hostRamTotal > 0 ? Math.max(0, hostRamTotal - Math.min(hostRamAvailRaw, hostRamTotal)) : 0;
+
   const hostVramTotal = session.hostDevice?.vramTotalBytes
     || (hardware?.total_vram_mb ? hardware.total_vram_mb * 1024 * 1024 : 0);
-  const hostVramUsed = session.hostDevice?.vramUsedBytes
+  const hostVramUsedRaw = session.hostDevice?.vramUsedBytes
     || (hardware && hardware.total_vram_mb != null && hardware.available_vram_mb != null
         ? Math.max(0, (hardware.total_vram_mb - hardware.available_vram_mb) * 1024 * 1024)
         : 0);
+  const hostVramUsed = hostVramTotal > 0 ? Math.min(hostVramUsedRaw, hostVramTotal) : 0;
 
   const friendlyName = friendlyModelTitle(session.modelPath || session.modelName);
 
@@ -541,60 +666,39 @@ export function DevicesPanel() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: 16,
+            gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+            gap: "16px 28px",
             paddingTop: 14,
             borderTop: "1px solid var(--color-border)",
           }}
         >
-          {/* Host Dedicated GPU VRAM */}
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-3)", marginBottom: 4 }}>
-              <span style={{ fontWeight: 600 }}>NVIDIA GPU VRAM</span>
-              <span className="mono">{hostVramTotal > 0 ? `${fmtBytes(hostVramUsed)} / ${fmtBytes(hostVramTotal)}` : "Scanning…"}</span>
-            </div>
-            <div style={{ width: "100%", height: 6, background: "var(--color-surface-subtle)", borderRadius: 3, overflow: "hidden" }}>
-              <div
-                style={{
-                  height: "100%",
-                  width: `${hostVramTotal > 0 ? Math.min(100, Math.round((hostVramUsed / hostVramTotal) * 100)) : 0}%`,
-                  background: "var(--color-cuda)",
-                }}
-              />
-            </div>
-            <div style={{ fontSize: 11, color: "var(--color-text-2)", marginTop: 4 }}>
-              {hostVramTotal > 0
-                ? `${fmtBytes(Math.max(0, hostVramTotal - hostVramUsed))} free · ${hardware?.gpu_name || "CUDA Dedicated VRAM"}`
-                : "CUDA Backend · Dedicated VRAM"}
-            </div>
-          </div>
+          <HardwareMeter
+            label="NVIDIA GPU VRAM"
+            used={hostVramUsed}
+            total={hostVramTotal}
+            color="var(--color-cuda)"
+            note={hardware?.gpu_name || "Dedicated CUDA VRAM"}
+            loadingLabel="Scanning…"
+            emptyLabel="No dedicated CUDA device"
+          />
 
-          {/* Physical Host RAM */}
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-3)", marginBottom: 4 }}>
-              <span style={{ fontWeight: 600 }}>Host Physical RAM</span>
-              <span className="mono">
-                {hostRamTotal > 0
-                  ? `${fmtBytes(hostRamUsed)} / ${fmtBytes(hostRamTotal)}`
-                  : "Scanning…"}
-              </span>
-            </div>
-            <div style={{ width: "100%", height: 6, background: "var(--color-surface-subtle)", borderRadius: 3, overflow: "hidden" }}>
-              <div
-                style={{
-                  height: "100%",
-                  width: `${hostRamTotal > 0 ? Math.min(100, Math.round((hostRamUsed / hostRamTotal) * 100)) : 0}%`,
-                  background: session.memoryAccounting?.isBelowReserve ? "var(--color-warn)" : "var(--color-accent)",
-                }}
-              />
-            </div>
-            <div style={{ fontSize: 11, color: "var(--color-text-2)", marginTop: 4 }}>
-              {hostRamTotal > 0 ? `${fmtBytes(hostRamAvail)} available` : "Reading host physical memory…"}
-              {hostRamTotal > 0 && session.memoryAccounting?.isBelowReserve && (
-                <span style={{ color: "var(--color-warn)", fontWeight: 600 }}> · Below reserve</span>
-              )}
-            </div>
-          </div>
+          <HardwareMeter
+            label="Host Physical RAM"
+            used={hostRamUsed}
+            total={hostRamTotal}
+            color="var(--color-accent)"
+            warn={session.memoryAccounting?.isBelowReserve}
+            note={
+              session.memoryAccounting?.isBelowReserve
+                ? "Below reserve"
+                : session.memoryAccounting?.reserveBytes
+                ? `${fmtBytes(session.memoryAccounting.reserveBytes)} reserved`
+                : undefined
+            }
+            noteWarn={session.memoryAccounting?.isBelowReserve}
+            loadingLabel="Scanning…"
+            emptyLabel="Reading host physical memory…"
+          />
         </div>
       </div>
 
@@ -1248,7 +1352,7 @@ export function DevicesPanel() {
                     <div>
                       <span style={{ color: "var(--color-text-3)", display: "block" }}>Host RAM:</span>
                       <strong className="mono" style={{ color: "var(--color-text)" }}>
-                        {hostRamTotal > 0 ? `${fmtBytes(hostRamAvail)} free of ${fmtBytes(hostRamTotal)}` : "8 GB System RAM"}
+                        {hostRamTotal > 0 ? `${fmtBytes(Math.max(0, hostRamTotal - hostRamUsed))} free of ${fmtBytes(hostRamTotal)}` : "8 GB System RAM"}
                       </strong>
                     </div>
                     <div>
