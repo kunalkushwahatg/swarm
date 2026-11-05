@@ -425,7 +425,7 @@ export function DevicesPanel() {
             }}
           >
             <Plus size={14} />
-            <span>Add Worker Computer</span>
+            <span>Pair Device (Phone / PC)</span>
           </button>
         </div>
       </div>
@@ -503,83 +503,97 @@ export function DevicesPanel() {
           padding: "16px 20px",
           background: "var(--color-surface)",
           border: "1px solid var(--color-border)",
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          display: "flex",
+          flexDirection: "column",
           gap: 16,
         }}
       >
-        {/* Profile Info */}
-        <div>
-          <div style={{ fontSize: 11, color: "var(--color-text-3)", marginBottom: 3 }}>
-            Active Runtime Profile
+        {/* Row 1: Profile & Model Metadata */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+          {/* Profile Info */}
+          <div>
+            <div style={{ fontSize: 11, color: "var(--color-text-3)", marginBottom: 3 }}>
+              Active Runtime Profile
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 13.5, color: "var(--color-text)" }}>
+              {displayedProfile?.display_name || "Runtime profile unavailable"}
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--color-text-2)", marginTop: 2, lineHeight: 1.4 }}>
+              {(displayedProfile?.description || "Runtime profile metadata is still loading.").replace(/\s*\(SWARM_USE_RPC=[01]\)/g, "")}
+            </div>
           </div>
-          <div style={{ fontWeight: 600, fontSize: 13.5, color: "var(--color-text)" }}>
-            {displayedProfile?.display_name || "Runtime profile unavailable"}
-          </div>
-          <div style={{ fontSize: 11.5, color: "var(--color-text-2)", marginTop: 2, lineHeight: 1.4 }}>
-            {(displayedProfile?.description || "Runtime profile metadata is still loading.").replace(/\s*\(SWARM_USE_RPC=[01]\)/g, "")}
+
+          {/* Model & Context */}
+          <div>
+            <div style={{ fontSize: 11, color: "var(--color-text-3)", marginBottom: 3 }}>
+              Configured Model &amp; Context
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text)" }}>
+              {friendlyName}
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--color-text-2)", marginTop: 2 }}>
+              Context: <span className="mono">{session.contextWindow.toLocaleString()} tokens</span> · Layers: <span className="mono">{totalModelLayers > 0 ? totalModelLayers : modelLayerStatus === "loading" ? "Loading…" : "Unavailable"}</span>
+            </div>
           </div>
         </div>
 
-        {/* Model & Context */}
-        <div>
-          <div style={{ fontSize: 11, color: "var(--color-text-3)", marginBottom: 3 }}>
-            Configured Model &amp; Context
+        {/* Row 2: Telemetry Meters (VRAM & RAM side-by-side) */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+            gap: 16,
+            paddingTop: 14,
+            borderTop: "1px solid var(--color-border)",
+          }}
+        >
+          {/* Host Dedicated GPU VRAM */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-3)", marginBottom: 4 }}>
+              <span style={{ fontWeight: 600 }}>NVIDIA GPU VRAM</span>
+              <span className="mono">{hostVramTotal > 0 ? `${fmtBytes(hostVramUsed)} / ${fmtBytes(hostVramTotal)}` : "Scanning…"}</span>
+            </div>
+            <div style={{ width: "100%", height: 6, background: "var(--color-surface-subtle)", borderRadius: 3, overflow: "hidden" }}>
+              <div
+                style={{
+                  height: "100%",
+                  width: `${hostVramTotal > 0 ? Math.min(100, Math.round((hostVramUsed / hostVramTotal) * 100)) : 0}%`,
+                  background: "var(--color-cuda)",
+                }}
+              />
+            </div>
+            <div style={{ fontSize: 11, color: "var(--color-text-2)", marginTop: 4 }}>
+              {hostVramTotal > 0
+                ? `${fmtBytes(Math.max(0, hostVramTotal - hostVramUsed))} free · ${hardware?.gpu_name || "CUDA Dedicated VRAM"}`
+                : "CUDA Backend · Dedicated VRAM"}
+            </div>
           </div>
-          <div style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text)" }}>
-            {friendlyName}
-          </div>
-          <div style={{ fontSize: 11.5, color: "var(--color-text-2)", marginTop: 2 }}>
-            Context: <span className="mono">{session.contextWindow.toLocaleString()} tokens</span> · Layers: <span className="mono">{totalModelLayers > 0 ? totalModelLayers : modelLayerStatus === "loading" ? "Loading…" : "Unavailable"}</span>
-          </div>
-        </div>
 
-        {/* Physical Host RAM */}
-        <div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-3)", marginBottom: 4 }}>
-            <span>Host Physical RAM</span>
-            <span className="mono">
-              {hostRamTotal > 0
-                ? `${fmtBytes(hostRamUsed)} / ${fmtBytes(hostRamTotal)}`
-                : "Scanning…"}
-            </span>
-          </div>
-          <div style={{ width: "100%", height: 6, background: "var(--color-surface-subtle)", borderRadius: 3, overflow: "hidden" }}>
-            <div
-              style={{
-                height: "100%",
-                width: `${hostRamTotal > 0 ? Math.min(100, Math.round((hostRamUsed / hostRamTotal) * 100)) : 0}%`,
-                background: session.memoryAccounting?.isBelowReserve ? "var(--color-warn)" : "var(--color-accent)",
-              }}
-            />
-          </div>
-          <div style={{ fontSize: 11, color: "var(--color-text-2)", marginTop: 4 }}>
-            {hostRamTotal > 0 ? `${fmtBytes(hostRamAvail)} available` : "Reading host physical memory…"}
-            {hostRamTotal > 0 && session.memoryAccounting?.isBelowReserve && (
-              <span style={{ color: "var(--color-warn)", fontWeight: 600 }}> · Below reserve</span>
-            )}
-          </div>
-        </div>
-
-        {/* Host Dedicated GPU VRAM */}
-        <div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-3)", marginBottom: 4 }}>
-            <span>NVIDIA GPU VRAM</span>
-            <span className="mono">{hostVramTotal > 0 ? `${fmtBytes(hostVramUsed)} / ${fmtBytes(hostVramTotal)}` : "Scanning…"}</span>
-          </div>
-          <div style={{ width: "100%", height: 6, background: "var(--color-surface-subtle)", borderRadius: 3, overflow: "hidden" }}>
-            <div
-              style={{
-                height: "100%",
-                width: `${hostVramTotal > 0 ? Math.min(100, Math.round((hostVramUsed / hostVramTotal) * 100)) : 0}%`,
-                background: "var(--color-cuda)",
-              }}
-            />
-          </div>
-          <div style={{ fontSize: 11, color: "var(--color-text-2)", marginTop: 4 }}>
-            {hostVramTotal > 0
-              ? `${fmtBytes(Math.max(0, hostVramTotal - hostVramUsed))} free · ${hardware?.gpu_name || "CUDA Dedicated VRAM"}`
-              : "CUDA Backend · Dedicated VRAM"}
+          {/* Physical Host RAM */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-3)", marginBottom: 4 }}>
+              <span style={{ fontWeight: 600 }}>Host Physical RAM</span>
+              <span className="mono">
+                {hostRamTotal > 0
+                  ? `${fmtBytes(hostRamUsed)} / ${fmtBytes(hostRamTotal)}`
+                  : "Scanning…"}
+              </span>
+            </div>
+            <div style={{ width: "100%", height: 6, background: "var(--color-surface-subtle)", borderRadius: 3, overflow: "hidden" }}>
+              <div
+                style={{
+                  height: "100%",
+                  width: `${hostRamTotal > 0 ? Math.min(100, Math.round((hostRamUsed / hostRamTotal) * 100)) : 0}%`,
+                  background: session.memoryAccounting?.isBelowReserve ? "var(--color-warn)" : "var(--color-accent)",
+                }}
+              />
+            </div>
+            <div style={{ fontSize: 11, color: "var(--color-text-2)", marginTop: 4 }}>
+              {hostRamTotal > 0 ? `${fmtBytes(hostRamAvail)} available` : "Reading host physical memory…"}
+              {hostRamTotal > 0 && session.memoryAccounting?.isBelowReserve && (
+                <span style={{ color: "var(--color-warn)", fontWeight: 600 }}> · Below reserve</span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -693,7 +707,8 @@ export function DevicesPanel() {
             const layerTotal = dev.totalModelLayers > 0 ? dev.totalModelLayers : totalModelLayers;
             const processorCount = dev.processors?.length || 1;
 
-            let localityLabel = "Host PC (This Computer)";
+            const hostBackend = hardware?.gpu_name ? "NVIDIA CUDA" : "Local Engine";
+            let localityLabel = `Local Host · Windows (x64) · ${hostBackend}`;
             let localityBadge = "Host Machine";
             let badgeVariant = "ok";
             let remoteStatusBadge: string | null = null;
@@ -789,7 +804,7 @@ export function DevicesPanel() {
                     <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                       <span className={`dot ${statusDotClass}`} />
                       <span style={{ fontWeight: 600, fontSize: 14, color: "var(--color-text)" }}>
-                        {dev.name}
+                        {isHost && dev.name.toLowerCase() === "this computer" ? "This Computer" : dev.name}
                       </span>
                     </div>
                     <div style={{ fontSize: 11.5, color: "var(--color-text-3)", marginTop: 2 }}>
@@ -856,7 +871,11 @@ export function DevicesPanel() {
                   <div>
                     <span style={{ color: "var(--color-text-3)", display: "block" }}>Processors</span>
                     <span style={{ fontWeight: 500, color: "var(--color-text)" }}>
-                      {isRemote ? (dev.processors[0]?.name || "Remote Compute Worker") : `${processorCount} ${processorCount === 1 ? "backend" : "backends"}`}
+                      {isHost
+                        ? (hardware?.gpu_name ? `${hardware.gpu_name} (CUDA)` : (dev.processors[0]?.name || "Local Host Processor"))
+                        : isRemote
+                        ? (dev.processors[0]?.name || "Remote Compute Worker")
+                        : (dev.processors[0]?.name || `${processorCount} ${processorCount === 1 ? "backend" : "backends"}`)}
                     </span>
                   </div>
 
