@@ -25,6 +25,9 @@ export function useWorkerMode() {
       if (!mountedRef.current) return;
       if (s) {
         setStatus(s);
+        if (s.hardware) {
+          setHardware(s.hardware);
+        }
         if (s.last_error) {
           setErrorMessage((previous) => previous ?? s.last_error);
         }

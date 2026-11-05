@@ -350,7 +350,27 @@ function useSwarmSessionState(pollIntervalMs: number): SwarmSession {
 
     const hostGpuPlacement = backends.find((b) => b.backend_type === "local_cuda");
     const hostVramTotal = hostGpuPlacement?.memory_total_bytes;
-    const hostVramFree = hostGpuPlacement?.memory_free_bytes;
+    const hostVramFreeRaw = hostGpuPlacement?.memory_free_bytes;
+    const allocatedGpuBuffers =
+      (hostGpuPlacement?.model_buffer_bytes || 0) +
+      (hostGpuPlacement?.kv_buffer_bytes || 0) +
+      (hostGpuPlacement?.compute_buffer_bytes || 0);
+
+    const baseHostVramUsed =
+      hostVramTotal != null && hostVramFreeRaw != null
+        ? Math.max(0, hostVramTotal - hostVramFreeRaw)
+        : 0;
+
+    const hostVramUsed =
+      hostVramTotal != null
+        ? Math.min(hostVramTotal, baseHostVramUsed + allocatedGpuBuffers)
+        : undefined;
+
+    const hostVramFree =
+      hostVramTotal != null && hostVramUsed != null
+        ? Math.max(0, hostVramTotal - hostVramUsed)
+        : hostVramFreeRaw;
+
     const hostConnection = effectiveHealth?.server?.host
       ? `${effectiveHealth.server.host}:${effectiveHealth.server.port} (Local Coordinator)`
       : "Coordinator unavailable";
@@ -369,10 +389,7 @@ function useSwarmSessionState(pollIntervalMs: number): SwarmSession {
       ramFreeBytes: hostRamAvail,
       vramTotalBytes: hostVramTotal,
       vramFreeBytes: hostVramFree,
-      vramUsedBytes:
-        hostVramTotal != null && hostVramFree != null
-          ? hostVramTotal - hostVramFree
-          : undefined,
+      vramUsedBytes: hostVramUsed,
       reserveBytes: effectiveReserveRam,
       isBelowReserve,
       processors: hostProcessors,

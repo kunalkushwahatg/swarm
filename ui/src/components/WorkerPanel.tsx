@@ -535,7 +535,9 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
               {hardware ? (hardware.gpu_name || "CPU-only") : "Unavailable"}
             </div>
             <div style={{ fontSize: 11, color: "var(--color-text-2)", marginTop: 2 }}>
-              {hardware?.available_vram_mb ? `${hardware.available_vram_mb.toLocaleString()} MB free` : "Integrated / Shared memory"}
+              {hardware?.available_vram_mb
+                ? `${hardware.available_vram_mb.toLocaleString()} MB free${hardware.total_vram_mb ? ` · ${hardware.total_vram_mb.toLocaleString()} MB total` : ""}`
+                : "Integrated / Shared memory"}
             </div>
           </div>
 
