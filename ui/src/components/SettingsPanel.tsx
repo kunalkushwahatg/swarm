@@ -101,7 +101,7 @@ export function SettingsPanel() {
         display: "flex",
         flexDirection: "column",
         gap: 22,
-        maxWidth: 1040,
+        maxWidth: 1080,
         margin: "0 auto",
         width: "100%",
         background: "var(--color-surface)",

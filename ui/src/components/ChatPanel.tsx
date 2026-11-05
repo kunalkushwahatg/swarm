@@ -595,7 +595,8 @@ export function ChatPanel() {
       <div
         className="card animate-fade-in"
         style={{
-          maxWidth: 960,
+          maxWidth: 1080,
+          margin: "0 auto",
           width: "100%",
           height: "100%",
           display: "flex",

@@ -73,7 +73,7 @@ export function SessionPanel() {
   const ramPct = ramTotal > 0 ? Math.min(100, Math.round((ramUsed / ramTotal) * 100)) : 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", maxWidth: 1040 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", maxWidth: 1080, margin: "0 auto" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>

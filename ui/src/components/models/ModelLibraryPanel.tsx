@@ -59,7 +59,7 @@ export const ModelLibraryPanel: React.FC = () => {
   );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", maxWidth: 1200, margin: "0 auto" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", maxWidth: 1080, margin: "0 auto" }}>
       {/* Top Header & Overview */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
         <div>

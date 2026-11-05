@@ -358,7 +358,7 @@ export function DevicesPanel() {
   const friendlyName = friendlyModelTitle(session.modelPath || session.modelName);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", maxWidth: 1040 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", maxWidth: 1080, margin: "0 auto" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 14 }}>
         <div>
