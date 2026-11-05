@@ -65,10 +65,6 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
   const roleInferenceId = useId();
   const roleWorkerId = useId();
   const roleCombinedId = useId();
-  const listenHostId = useId();
-  const rpcPortId = useId();
-  const threadsId = useId();
-  const allowRemoteAccessId = useId();
 
   useEffect(() => {
     if (!config) return;
@@ -115,33 +111,6 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
     navigator.clipboard.writeText(text);
     setCopiedPairing(true);
     setTimeout(() => setCopiedPairing(false), 2000);
-  };
-
-  const handleSaveSettings = async () => {
-    clearError();
-    setSaveSuccessMsg(null);
-    try {
-      await saveConfig({
-        role,
-        listen_host: listenHost,
-        rpc_port: Number(rpcPort),
-        threads: Number(threads),
-        backend_device: backendDevice,
-        authorized_controller_ip: authorizedControllerIp,
-        allow_remote_access: allowRemoteAccess,
-        enable_file_cache: true,
-        target_ram_mb: Number(targetRamMb),
-        target_vram_mb: Number(targetVramMb),
-        reserved_headroom_ram_mb: 1024,
-        reserved_headroom_vram_mb: 256,
-        background_run_enabled: backgroundRunEnabled,
-        updated_at_ms: Date.now(),
-      });
-      setSaveSuccessMsg("Worker configuration saved successfully.");
-      setTimeout(() => setSaveSuccessMsg(null), 3000);
-    } catch {
-      // Error handled in hook
-    }
   };
 
   const handleRevokeRemoteAccess = async () => {
@@ -636,7 +605,7 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
         </div>
       )}
 
-      {/* ── CARD 4: NETWORK & SECURITY CONTROLS ───────────────────────── */}
+      {/* ── CARD 4: CONNECTION MODE & ACCESS CONTROLS ───────────────── */}
       <div
         className="card"
         style={{
@@ -646,198 +615,279 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
           borderRadius: "var(--radius)",
           display: "flex",
           flexDirection: "column",
-          gap: 14,
+          gap: 16,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
             <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: "var(--color-text)" }}>
-              Network &amp; Security Controls
+              Connection Mode &amp; Access Controls
             </h2>
             <div style={{ fontSize: 11.5, color: "var(--color-text-3)", marginTop: 2 }}>
-              Configure network binding, port, and firewall rules for compute sharing.
+              Choose how other devices connect to this machine to share compute.
             </div>
           </div>
 
           {isListening && (
             <span className="badge badge-warn" style={{ fontSize: 11 }}>
-              Stop compute sharing to modify network settings
+              Stop sharing to modify connection settings
             </span>
           )}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
-          {/* Listening Interface Selection */}
-          <div>
-            <label htmlFor={listenHostId} style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--color-text)", marginBottom: 4 }}>
-              Listening Interface
-            </label>
-            <select
-              id={listenHostId}
-              value={listenHost}
-              onChange={(e) => setListenHost(e.target.value)}
-              disabled={isListening}
-              style={{
-                width: "100%",
-                padding: "7px 10px",
-                fontSize: 12,
-                borderRadius: "var(--radius-sm)",
-                border: "1px solid var(--color-border)",
-                background: "var(--color-surface-subtle)",
-                color: "var(--color-text)",
-                outline: "none",
-              }}
-            >
-              <option value="127.0.0.1">Loopback Only (127.0.0.1) — Secure</option>
-              {!isAndroid &&
-                (status?.network_interfaces || [])
-                  .filter((ip: string) => ip !== "127.0.0.1")
-                  .map((ip: string) => (
-                    <option key={ip} value={ip} disabled={!allowRemoteAccess}>
-                      {ip} {!allowRemoteAccess ? "(Requires Remote Access)" : ""}
-                    </option>
-                  ))}
-              {!isAndroid && (
-                <option value="0.0.0.0" disabled={!allowRemoteAccess}>
-                  All Interfaces (0.0.0.0) {!allowRemoteAccess ? "(Requires Remote Access)" : ""}
-                </option>
-              )}
-            </select>
+        {/* Two Connection Mode Option Cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
+          {/* Option 1: Encrypted Peer Tunnel (Default & Recommended) */}
+          <div
+            onClick={() => {
+              if (isListening) return;
+              setAllowRemoteAccess(false);
+              setListenHost("127.0.0.1");
+            }}
+            style={{
+              padding: "14px 16px",
+              borderRadius: "var(--radius-sm)",
+              border: !allowRemoteAccess
+                ? "1.5px solid var(--color-accent)"
+                : "1px solid var(--color-border)",
+              background: !allowRemoteAccess
+                ? "var(--color-accent-subtle)"
+                : "var(--color-surface)",
+              cursor: isListening ? "not-allowed" : "pointer",
+              transition: "all var(--dur-fast)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: !allowRemoteAccess ? "var(--color-accent)" : "var(--color-border-strong)",
+                  }}
+                />
+                <strong style={{ fontSize: 13, color: "var(--color-text)" }}>
+                  Encrypted Peer Tunnel (Recommended)
+                </strong>
+              </div>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  padding: "1px 6px",
+                  borderRadius: 3,
+                  background: !allowRemoteAccess ? "var(--color-accent)" : "var(--color-surface-subtle)",
+                  color: !allowRemoteAccess ? "#FFFFFF" : "var(--color-text-3)",
+                }}
+              >
+                Safe &amp; Private
+              </span>
+            </div>
+            <p style={{ fontSize: 11.5, color: "var(--color-text-2)", margin: 0, lineHeight: 1.45 }}>
+              Pairs securely via 6-digit PIN over Wi-Fi, 5G cellular, or USB. Operates on local loopback (127.0.0.1) with zero firewall configuration needed.
+            </p>
           </div>
 
-          {/* Port */}
-          <div>
-            <label htmlFor={rpcPortId} style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--color-text)", marginBottom: 4 }}>
-              RPC Port
-            </label>
-            <input
-              id={rpcPortId}
-              type="number"
-              value={rpcPort}
-              onChange={(e) => setRpcPort(parseInt(e.target.value) || 50052)}
-              disabled={isListening}
-              className="mono"
-              style={{
-                width: "100%",
-                padding: "7px 10px",
-                fontSize: 12,
-                borderRadius: "var(--radius-sm)",
-                border: "1px solid var(--color-border)",
-                background: "var(--color-surface-subtle)",
-                color: "var(--color-text)",
-                outline: "none",
-              }}
-            />
-          </div>
-
-          {/* Threads */}
-          <div>
-            <label htmlFor={threadsId} style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--color-text)", marginBottom: 4 }}>
-              Compute Threads
-            </label>
-            <input
-              id={threadsId}
-              type="number"
-              value={threads}
-              onChange={(e) => setThreads(parseInt(e.target.value) || 4)}
-              disabled={isListening}
-              className="mono"
-              style={{
-                width: "100%",
-                padding: "7px 10px",
-                fontSize: 12,
-                borderRadius: "var(--radius-sm)",
-                border: "1px solid var(--color-border)",
-                background: "var(--color-surface-subtle)",
-                color: "var(--color-text)",
-                outline: "none",
-              }}
-            />
+          {/* Option 2: Direct LAN Socket (Advanced) */}
+          <div
+            onClick={() => {
+              if (isListening) return;
+              setAllowRemoteAccess(true);
+              const defaultLan = (status?.network_interfaces || []).find((ip: string) => ip !== "127.0.0.1") || "0.0.0.0";
+              setListenHost(defaultLan);
+            }}
+            style={{
+              padding: "14px 16px",
+              borderRadius: "var(--radius-sm)",
+              border: allowRemoteAccess
+                ? "1.5px solid var(--color-accent)"
+                : "1px solid var(--color-border)",
+              background: allowRemoteAccess
+                ? "var(--color-accent-subtle)"
+                : "var(--color-surface)",
+              cursor: isListening ? "not-allowed" : "pointer",
+              transition: "all var(--dur-fast)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: allowRemoteAccess ? "var(--color-accent)" : "var(--color-border-strong)",
+                  }}
+                />
+                <strong style={{ fontSize: 13, color: "var(--color-text)" }}>
+                  Direct LAN Socket (Advanced)
+                </strong>
+              </div>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  padding: "1px 6px",
+                  borderRadius: 3,
+                  background: allowRemoteAccess ? "var(--color-accent)" : "var(--color-surface-subtle)",
+                  color: allowRemoteAccess ? "#FFFFFF" : "var(--color-text-3)",
+                }}
+              >
+                LAN / VPN
+              </span>
+            </div>
+            <p style={{ fontSize: 11.5, color: "var(--color-text-2)", margin: 0, lineHeight: 1.45 }}>
+              Binds unencrypted RPC port directly to your home network or WireGuard subnet. Requires entering your controller PC's IP to restrict firewall access.
+            </p>
           </div>
         </div>
 
-        {/* Remote Sharing Auth Toggle (Windows only) */}
-        {!isAndroid && (
-          <div style={{ paddingTop: 8, borderTop: "1px solid var(--color-border)", display: "flex", flexDirection: "column", gap: 10 }}>
-            <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: isListening ? "not-allowed" : "pointer" }}>
-              <input
-                id={allowRemoteAccessId}
-                type="checkbox"
-                checked={allowRemoteAccess}
-                onChange={(e) => {
-                  setAllowRemoteAccess(e.target.checked);
-                  if (!e.target.checked) setListenHost("127.0.0.1");
-                }}
-                disabled={isListening}
-                style={{ accentColor: "var(--color-accent)", marginTop: 2 }}
-              />
-              <div>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-text)" }}>
-                  Authorize Remote LAN / VPN Access (Direct IP Mode)
-                </span>
-                <span style={{ display: "block", fontSize: 11.5, color: "var(--color-text-2)", marginTop: 2 }}>
-                  Enables binding to external network adapters. Requires specifying your controller PC's IP to restrict firewall access.
-                </span>
-              </div>
-            </label>
+        {/* Advanced Settings Drawer (Only visible when Direct LAN is active) */}
+        {allowRemoteAccess && (
+          <div
+            className="animate-fade-in"
+            style={{
+              padding: "14px 16px",
+              borderRadius: "var(--radius-sm)",
+              background: "var(--color-surface-subtle)",
+              border: "1px solid var(--color-border)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text)" }}>
+              Direct LAN Configuration
+            </div>
 
-            {/* When checked, show the Authorized Controller IP input */}
-            {allowRemoteAccess && (
-              <div
-                className="animate-fade-in"
-                style={{
-                  padding: "12px 14px",
-                  background: "var(--color-surface-subtle)",
-                  borderRadius: "var(--radius-sm)",
-                  border: "1px solid var(--color-border)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 6,
-                }}
-              >
-                <label htmlFor="authorized-controller-ip" style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text)" }}>
-                  Authorized Controller IP Address:
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+              {/* Network Adapter */}
+              <div>
+                <label style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: "var(--color-text)", marginBottom: 4 }}>
+                  Network Interface
                 </label>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input
-                    id="authorized-controller-ip"
-                    type="text"
-                    placeholder="e.g. 192.168.204.45 (IP of Computer A)"
-                    value={authorizedControllerIp}
-                    onChange={(e) => setAuthorizedControllerIp(e.target.value)}
-                    disabled={isListening}
-                    className="mono"
-                    style={{
-                      flex: 1,
-                      padding: "7px 10px",
-                      fontSize: 12,
-                      borderRadius: "var(--radius-sm)",
-                      border: "1px solid var(--color-border)",
-                      background: "var(--color-surface)",
-                      color: "var(--color-text)",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-                <span style={{ fontSize: 11, color: "var(--color-text-3)", lineHeight: 1.4 }}>
-                  For security, the Windows Firewall rule will restrict incoming RPC access strictly to this IP address.
-                </span>
+                <select
+                  value={listenHost}
+                  onChange={(e) => setListenHost(e.target.value)}
+                  disabled={isListening}
+                  style={{
+                    width: "100%",
+                    padding: "7px 10px",
+                    fontSize: 12,
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--color-border)",
+                    background: "var(--color-surface)",
+                    color: "var(--color-text)",
+                    outline: "none",
+                  }}
+                >
+                  {(status?.network_interfaces || [])
+                    .filter((ip: string) => ip !== "127.0.0.1")
+                    .map((ip: string) => (
+                      <option key={ip} value={ip}>{ip}</option>
+                    ))}
+                  <option value="0.0.0.0">All Interfaces (0.0.0.0)</option>
+                </select>
               </div>
-            )}
+
+              {/* Port (Clean input without spinners) */}
+              <div>
+                <label style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: "var(--color-text)", marginBottom: 4 }}>
+                  RPC Port
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={rpcPort}
+                  onChange={(e) => {
+                    const clean = e.target.value.replace(/\D/g, "");
+                    setRpcPort(parseInt(clean) || 50052);
+                  }}
+                  disabled={isListening}
+                  className="mono"
+                  style={{
+                    width: "100%",
+                    padding: "7px 10px",
+                    fontSize: 12,
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--color-border)",
+                    background: "var(--color-surface)",
+                    color: "var(--color-text)",
+                    outline: "none",
+                  }}
+                />
+              </div>
+
+              {/* Controller IP */}
+              <div>
+                <label style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: "var(--color-text)", marginBottom: 4 }}>
+                  Authorized Controller IP
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 192.168.204.45 (Computer A)"
+                  value={authorizedControllerIp}
+                  onChange={(e) => setAuthorizedControllerIp(e.target.value)}
+                  disabled={isListening}
+                  className="mono"
+                  style={{
+                    width: "100%",
+                    padding: "7px 10px",
+                    fontSize: 12,
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--color-border)",
+                    background: "var(--color-surface)",
+                    color: "var(--color-text)",
+                    outline: "none",
+                  }}
+                />
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Action Footer */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 10, borderTop: "1px solid var(--color-border)" }}>
-          <button
-            type="button"
-            className="btn-ghost"
-            onClick={handleSaveSettings}
-            disabled={isListening}
-            style={{ padding: "6px 16px", fontSize: 12.5 }}
-          >
-            Save Configuration
-          </button>
+        {/* Compute Hardware Allocation (Threads) */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 10, borderTop: "1px solid var(--color-border)", flexWrap: "wrap", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Cpu size={14} color="var(--color-accent)" />
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text)" }}>
+              Dedicated Compute Threads:
+            </span>
+            <span style={{ fontSize: 11.5, color: "var(--color-text-3)" }}>
+              (Leaves 2 cores free for system responsiveness)
+            </span>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => setThreads(Math.max(1, threads - 1))}
+              disabled={isListening || threads <= 1}
+              style={{ width: 28, height: 28, padding: 0 }}
+            >
+              -
+            </button>
+            <span className="mono" style={{ fontSize: 13, fontWeight: 700, minWidth: 32, textAlign: "center" }}>
+              {threads}
+            </span>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => setThreads(Math.min(hardware?.logical_cores || 16, threads + 1))}
+              disabled={isListening}
+              style={{ width: 28, height: 28, padding: 0 }}
+            >
+              +
+            </button>
+          </div>
         </div>
       </div>
     </div>
