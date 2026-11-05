@@ -758,7 +758,7 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
 
         {/* Remote Sharing Auth Toggle (Windows only) */}
         {!isAndroid && (
-          <div style={{ paddingTop: 8, borderTop: "1px solid var(--color-border)" }}>
+          <div style={{ paddingTop: 8, borderTop: "1px solid var(--color-border)", display: "flex", flexDirection: "column", gap: 10 }}>
             <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: isListening ? "not-allowed" : "pointer" }}>
               <input
                 id={allowRemoteAccessId}
@@ -773,13 +773,57 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
               />
               <div>
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-text)" }}>
-                  Authorize Remote LAN / VPN Access
+                  Authorize Remote LAN / VPN Access (Direct IP Mode)
                 </span>
                 <span style={{ display: "block", fontSize: 11.5, color: "var(--color-text-2)", marginTop: 2 }}>
-                  Enables binding to external network cards. Requires setting the controller IP address for security.
+                  Enables binding to external network adapters. Requires specifying your controller PC's IP to restrict firewall access.
                 </span>
               </div>
             </label>
+
+            {/* When checked, show the Authorized Controller IP input */}
+            {allowRemoteAccess && (
+              <div
+                className="animate-fade-in"
+                style={{
+                  padding: "12px 14px",
+                  background: "var(--color-surface-subtle)",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--color-border)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                }}
+              >
+                <label htmlFor="authorized-controller-ip" style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text)" }}>
+                  Authorized Controller IP Address:
+                </label>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    id="authorized-controller-ip"
+                    type="text"
+                    placeholder="e.g. 192.168.204.45 (IP of Computer A)"
+                    value={authorizedControllerIp}
+                    onChange={(e) => setAuthorizedControllerIp(e.target.value)}
+                    disabled={isListening}
+                    className="mono"
+                    style={{
+                      flex: 1,
+                      padding: "7px 10px",
+                      fontSize: 12,
+                      borderRadius: "var(--radius-sm)",
+                      border: "1px solid var(--color-border)",
+                      background: "var(--color-surface)",
+                      color: "var(--color-text)",
+                      outline: "none",
+                    }}
+                  />
+                </div>
+                <span style={{ fontSize: 11, color: "var(--color-text-3)", lineHeight: 1.4 }}>
+                  For security, the Windows Firewall rule will restrict incoming RPC access strictly to this IP address.
+                </span>
+              </div>
+            )}
           </div>
         )}
 
