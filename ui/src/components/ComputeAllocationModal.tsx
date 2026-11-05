@@ -33,7 +33,7 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
     reserved_headroom_vram_mb: 256,
     context_size: 2048,
     device_settings: [],
-    updated_at_ms: Date.now(),
+    updated_at_ms: 0,
   });
   const [hasBackup, setHasBackup] = useState(false);
   const [activePolicy, setActivePolicy] = useState("Unavailable");
@@ -1085,7 +1085,7 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
 
                         return (
                           <div
-                            key={b.backend_id || b.endpoint || Math.random().toString()}
+                            key={b.backend_id || b.endpoint || `runtime-slice-${b.backend_type}`}
                             style={{
                               flex: weight,
                               minWidth: 0,
@@ -1113,7 +1113,7 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
 
                     {/* Dedicated Backend Legend Breakdown */}
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px" }}>
-                      {(runtimePlacement?.backends || []).map((b: RuntimePlacementBackend) => {
+                      {(runtimePlacement?.backends || []).map((b: RuntimePlacementBackend, bIdx: number) => {
                         const isCuda = b.backend_type === "cuda" || b.backend_type === "local_cuda";
                         const isRpc = b.backend_type === "rpc";
                         const bg = isCuda ? "var(--color-cuda)" : isRpc ? "var(--color-rpc)" : "var(--color-accent)";
@@ -1121,7 +1121,7 @@ export const ComputeAllocationModal: React.FC<ComputeAllocationModalProps> = ({
                         const layerStr = b.assigned_layers.length > 0 ? `${b.assigned_layers.length} layers` : "Shared Buffer";
 
                         return (
-                          <div key={b.backend_id || b.endpoint || Math.random().toString()} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+                          <div key={b.backend_id || b.endpoint || `backend-legend-${bIdx}`} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11 }}>
                             <span style={{ width: 8, height: 8, borderRadius: 2, background: bg, flexShrink: 0 }} />
                             <strong style={{ color: "var(--color-text)" }}>{b.device_name || b.backend_id}:</strong>
                             <span className="mono" style={{ color: "var(--color-text-2)" }}>{layerStr} ({memStr})</span>

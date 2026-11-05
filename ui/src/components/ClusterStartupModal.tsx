@@ -111,7 +111,7 @@ export const ClusterStartupModal: React.FC = () => {
         if (active && lines && lines.length > 0) {
           setLogs(lines);
         }
-      } catch (e) {
+      } catch {
         // Ignore pipe errors while process is initializing
       }
     };
@@ -138,7 +138,7 @@ export const ClusterStartupModal: React.FC = () => {
 
   // Authoritative log-driven stage determination (Real physical state!)
   const allLogs = logs.join("\n");
-  const rpcMatch = allLogs.match(/RPC0.*?model buffer size\s*=\s*([\d\.]+\s*[M|G]iB)/i);
+  const rpcMatch = allLogs.match(/RPC0.*?model buffer size\s*=\s*([\d.]+\s*[M|G]iB)/i);
   const transferSizeStr = rpcMatch ? rpcMatch[1] : undefined;
 
   let activeStage = 1;

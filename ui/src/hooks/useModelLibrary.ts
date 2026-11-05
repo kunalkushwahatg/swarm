@@ -139,7 +139,7 @@ export function useModelLibrary() {
     }
   };
 
-  const selectModel = async (modelId: string, forceRestart: boolean = false): Promise<ModelSelectResult> => {
+  const selectModel = useCallback(async (modelId: string, forceRestart: boolean = false): Promise<ModelSelectResult> => {
     try {
       setError(null);
       // Optimistic update of local library state so UI reacts instantly
@@ -181,7 +181,7 @@ export function useModelLibrary() {
       setError(msg);
       throw err;
     }
-  };
+  }, [libraryState?.installed_models, fetchLibrary]);
 
   // Handle cross-component model switch requests (e.g. from TopBar dropdown)
   useEffect(() => {

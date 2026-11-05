@@ -81,22 +81,22 @@ export function PlacementRibbon({
           // Hue = Physical Device. Fill = Processor
           // Host (Verdigris #1F6F66), Helper (Steel #46598F)
           let background = "var(--color-accent)";
-          let border = "none";
+          let borderColor = "var(--color-accent)";
           let borderStyle = "solid";
 
           if (seg.processor === "cpu") {
             background = "var(--color-accent-subtle)";
-            border = "1.5px solid var(--color-accent)";
+            borderColor = "var(--color-accent)";
           } else if (seg.processor === "gpu") {
             background = "var(--color-accent)";
-            border = "1.5px solid var(--color-accent)";
+            borderColor = "var(--color-accent)";
           } else if (seg.isLoopback) {
             background = "var(--color-surface-subtle)";
-            border = "1.5px dashed var(--color-steel)";
+            borderColor = "var(--color-steel)";
             borderStyle = "dashed";
           } else {
             background = "var(--color-steel)";
-            border = "1.5px solid var(--color-steel)";
+            borderColor = "var(--color-steel)";
           }
 
           return (
@@ -115,8 +115,7 @@ export function PlacementRibbon({
               style={{
                 flex: `${widthPct}`,
                 background,
-                border,
-                borderStyle,
+                border: `1.5px ${borderStyle} ${borderColor}`,
                 borderRadius: 3,
                 cursor: "pointer",
                 position: "relative",

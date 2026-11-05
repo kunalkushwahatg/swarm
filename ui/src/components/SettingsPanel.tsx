@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSwarmSession } from "../hooks/useSwarmSession";
 import { useSupervisor } from "../hooks/useSupervisor";
 import { supervisor } from "../lib/supervisor";
@@ -33,6 +33,12 @@ export function SettingsPanel() {
   const [selectedContext, setSelectedContext] = useState<number>(session.contextWindow || 2048);
   const [modelPathInput, setModelPathInput] = useState<string>(session.modelPath || "");
   const [stagedMessage, setStagedMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (session.modelPath) {
+      setModelPathInput(session.modelPath);
+    }
+  }, [session.modelPath]);
 
   const fetchDiagnostics = async () => {
     setDiagLoading(true);
