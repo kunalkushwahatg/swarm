@@ -358,10 +358,11 @@ pub fn generate_secure_random_hex(byte_count: usize) -> Result<String, String> {
     Ok(format!("{:016x}{:016x}", now, now.wrapping_mul(6364136223846793005)))
 }
 
-/// Queries the host operating system for available private IPv4 addresses (LAN / VPN),
+/// Queries the host operating system for available private IPv4 addresses (LAN / VPN) along with interface aliases,
 /// filtering out loopback and link-local APIPA addresses.
-pub fn get_local_ip_addresses() -> Vec<String> {
+pub fn get_local_ip_addresses_with_aliases() -> (Vec<String>, std::collections::HashMap<String, String>) {
     let mut ips: Vec<String> = Vec::new();
+    let mut aliases: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
     // 1. Try kernel routing table lookup via dummy UDP connect (zero network traffic sent)
     if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
@@ -384,7 +385,7 @@ pub fn get_local_ip_addresses() -> Vec<String> {
             .args(&[
                 "-NoProfile",
                 "-Command",
-                "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' }).IPAddress",
+                "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | ForEach-Object { '{0}|{1}' -f $_.IPAddress, $_.InterfaceAlias }",
             ])
             .creation_flags(CREATE_NO_WINDOW)
             .output()
@@ -393,7 +394,19 @@ pub fn get_local_ip_addresses() -> Vec<String> {
                 let text = String::from_utf8_lossy(&output.stdout);
                 for line in text.lines() {
                     let trimmed = line.trim();
-                    if !trimmed.is_empty() && !ips.contains(&trimmed.to_string()) {
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    if let Some((ip_part, alias_part)) = trimmed.split_once('|') {
+                        let ip = ip_part.trim().to_string();
+                        let alias = alias_part.trim().to_string();
+                        if !ips.contains(&ip) {
+                            ips.push(ip.clone());
+                        }
+                        if !alias.is_empty() {
+                            aliases.insert(ip, alias);
+                        }
+                    } else if !ips.contains(&trimmed.to_string()) {
                         ips.push(trimmed.to_string());
                     }
                 }
@@ -419,7 +432,13 @@ pub fn get_local_ip_addresses() -> Vec<String> {
         else { 10 }
     });
 
-    ips
+    (ips, aliases)
+}
+
+/// Queries the host operating system for available private IPv4 addresses (LAN / VPN),
+/// filtering out loopback and link-local APIPA addresses.
+pub fn get_local_ip_addresses() -> Vec<String> {
+    get_local_ip_addresses_with_aliases().0
 }
 
 /// Cached IPv4 subnets belonging to USB tethering (RNDIS) adapters.

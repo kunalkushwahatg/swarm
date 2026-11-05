@@ -121,6 +121,7 @@ export interface WorkerProbeResult {
 
 export interface HostNetworkInfo {
   ip_addresses: string[];
+  ip_names?: Record<string, string>;
   preferred_ip: string;
   coordinator_port: number;
   telemetry_token?: string;
@@ -522,6 +523,7 @@ export interface WorkerModeStatus {
   hardware: WorkerHardwareTelemetry;
   config: WorkerModeConfig;
   network_interfaces: string[];
+  network_interface_names?: Record<string, string>;
   firewall_rule_installed: boolean | null;
   firewall_status: "NotRequired" | "RestrictedAndVerified" | "UnrestrictedWarning" | "MissingRule" | "ControllerMismatch" | "ElevationRequired" | string;
   firewall_remote_address: string | null;

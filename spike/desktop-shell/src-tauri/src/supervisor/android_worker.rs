@@ -282,6 +282,7 @@ fn build_status(
         hardware,
         config,
         network_interfaces: super::win32::get_local_ip_addresses(),
+        network_interface_names: std::collections::HashMap::new(),
         // Android has no host firewall to manage; the worker is reachable on
         // the LAN by design and authenticated by the encrypted relay tunnel.
         firewall_rule_installed: None,

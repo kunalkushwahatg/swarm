@@ -29,6 +29,19 @@ function cleanCpuName(name: string): string {
   return name.replace(/\(R\)|\(TM\)/gi, "").trim();
 }
 
+function formatInterfaceLabel(ip: string, alias?: string): string {
+  if (alias) {
+    return `${ip} (${alias})`;
+  }
+  if (ip.startsWith("192.168.137.")) return `${ip} (Hotspot)`;
+  if (ip.startsWith("172.16.") || ip.startsWith("172.17.") || ip.startsWith("172.18.")) return `${ip} (Cloudflare WARP / VPN)`;
+  if (ip.startsWith("100.")) return `${ip} (Tailscale VPN)`;
+  if (ip.startsWith("10.154.")) return `${ip} (USB Tethering)`;
+  if (ip.startsWith("192.168.")) return `${ip} (Wi-Fi / LAN)`;
+  if (ip.startsWith("10.")) return `${ip} (Local Network)`;
+  return ip;
+}
+
 export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
   const {
     config,
@@ -790,10 +803,15 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
                 >
                   {(status?.network_interfaces || [])
                     .filter((ip: string) => ip !== "127.0.0.1")
-                    .map((ip: string) => (
-                      <option key={ip} value={ip}>{ip}</option>
-                    ))}
-                  <option value="0.0.0.0">All Interfaces (0.0.0.0)</option>
+                    .map((ip: string) => {
+                      const alias = status?.network_interface_names?.[ip];
+                      return (
+                        <option key={ip} value={ip}>
+                          {formatInterfaceLabel(ip, alias)}
+                        </option>
+                      );
+                    })}
+                  <option value="0.0.0.0">All Interfaces (0.0.0.0) — Listen on all networks</option>
                 </select>
               </div>
 

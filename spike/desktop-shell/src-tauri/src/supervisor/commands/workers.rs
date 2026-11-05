@@ -380,13 +380,14 @@ pub fn probe_remote_worker_endpoint_internal(host: &str, port: u16, timeout_ms: 
 }
 
 pub fn get_host_network_info_internal() -> HostNetworkInfo {
-    let ips = get_local_ip_addresses();
+    let (ips, ip_names) = crate::supervisor::win32::get_local_ip_addresses_with_aliases();
     let preferred_ip = ips.first().cloned().unwrap_or_else(|| "127.0.0.1".to_string());
     let token = read_telemetry_token_if_exists();
     let hostname = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Host-PC".to_string());
 
     HostNetworkInfo {
         ip_addresses: ips,
+        ip_names,
         preferred_ip,
         coordinator_port: 8080,
         telemetry_token: token,

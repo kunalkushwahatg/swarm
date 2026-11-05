@@ -51,6 +51,8 @@ pub struct WorkerProbeResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostNetworkInfo {
     pub ip_addresses: Vec<String>,
+    #[serde(default)]
+    pub ip_names: std::collections::HashMap<String, String>,
     pub preferred_ip: String,
     pub coordinator_port: u16,
     pub telemetry_token: Option<String>,

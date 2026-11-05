@@ -105,6 +105,8 @@ pub struct WorkerModeStatus {
     pub hardware: WorkerHardwareTelemetry,
     pub config: WorkerModeConfig,
     pub network_interfaces: Vec<String>,
+    #[serde(default)]
+    pub network_interface_names: std::collections::HashMap<String, String>,
     pub firewall_rule_installed: Option<bool>,
     pub firewall_status: String, // "NotRequired" | "RestrictedAndVerified" | "UnrestrictedWarning" | "MissingRule" | "ControllerMismatch" | "ElevationRequired"
     pub firewall_remote_address: Option<String>,
@@ -897,7 +899,7 @@ impl WorkerModeManager {
             None
         };
 
-        let interfaces = get_local_ip_addresses();
+        let (interfaces, interface_names) = crate::supervisor::win32::get_local_ip_addresses_with_aliases();
         let preferred_ip = interfaces.first().cloned().unwrap_or_else(|| "127.0.0.1".to_string());
         let advertised_host = match config.listen_host.as_str() {
             // A loopback-only worker is not reachable through a LAN address.
@@ -975,6 +977,7 @@ impl WorkerModeManager {
             hardware,
             config,
             network_interfaces: interfaces,
+            network_interface_names: interface_names,
             firewall_rule_installed,
             firewall_status: fw_status,
             firewall_remote_address: fw_remote_addr,
