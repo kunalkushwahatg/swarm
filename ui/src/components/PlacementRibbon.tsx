@@ -133,28 +133,43 @@ export function PlacementRibbon({
                   className="placement-segment-tooltip"
                   style={{
                     position: "absolute",
-                    bottom: "calc(100% + 6px)",
+                    bottom: "calc(100% + 8px)",
                     left: "50%",
                     transform: "translateX(-50%)",
-                    background: "var(--color-ink)",
+                    background: "#1C2024",
                     color: "#FFFFFF",
-                    padding: "5px 9px",
+                    padding: "6px 12px",
                     borderRadius: 6,
-                    fontSize: 11,
+                    fontSize: 11.5,
                     fontFamily: "var(--font-sans)",
                     whiteSpace: "nowrap",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                    zIndex: 100,
+                    boxShadow: "0 6px 20px rgba(0, 0, 0, 0.35)",
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
+                    zIndex: 999,
                     pointerEvents: "none",
                   }}
                 >
-                  <div style={{ fontWeight: 600, display: "flex", gap: 5, alignItems: "center" }}>
+                  <div style={{ fontWeight: 600, display: "flex", gap: 6, alignItems: "center", color: "#FFFFFF" }}>
                     <span>{seg.deviceName}</span>
-                    <span className="mono" style={{ color: "#CDD3CA" }}>({seg.rangeLabel})</span>
+                    <span className="mono" style={{ color: "#9BA3AF", fontSize: 11 }}>({seg.rangeLabel})</span>
                   </div>
-                  <div style={{ fontSize: 10, color: "#A0A8B0", marginTop: 2 }}>
-                    {seg.layerCount} layers · Click to inspect drill-down
+                  <div style={{ fontSize: 10.5, color: "#D1D5DB", marginTop: 2 }}>
+                    {seg.layerCount} layers · Click to inspect details
                   </div>
+                  {/* Downward triangle arrow */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: "50%",
+                      transform: "translateX(-50%)",
+                      width: 0,
+                      height: 0,
+                      borderLeft: "5px solid transparent",
+                      borderRight: "5px solid transparent",
+                      borderTop: "5px solid #1C2024",
+                    }}
+                  />
                 </div>
               )}
             </button>

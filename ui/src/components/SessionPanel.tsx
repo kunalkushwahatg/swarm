@@ -184,7 +184,7 @@ export function SessionPanel() {
       </div>
 
       {/* Model Layer Placement Ribbon */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 4 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span className="section-label" style={{ fontWeight: 600 }}>Model Placement Across Devices</span>
           <span className="mono" style={{ fontSize: 11, color: "var(--color-text-3)" }}>
