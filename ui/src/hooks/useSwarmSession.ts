@@ -405,12 +405,15 @@ function useSwarmSessionState(pollIntervalMs: number): SwarmSession {
         return; // Already part of host
       }
 
-      const matchPlacement = backends.find((b) => (w.port && b.endpoint?.includes(String(w.port))) || b.backend_id === w.id || b.backend_id === w.device_name);
-      const layersCount = matchPlacement?.assigned_layers?.length ?? w.assigned_layers?.length ?? 0;
-      const rangeLabel = matchPlacement?.assigned_layer_ranges?.map(([s, e]) => (s === e ? `L${s}` : `L${s}–L${e}`)).join(", ") || (w.assigned_layers?.length > 0 ? `L${w.assigned_layers[0]}–L${w.assigned_layers[w.assigned_layers.length - 1]}` : "0 layers");
+      // One worker can export several devices (RPC0, RPC1, ...). Emit one
+      // helper row per device instead of collapsing them into one worker.
+      const workerPlacements = backends.filter(
+        (b) => (w.port && b.endpoint?.includes(String(w.port))) || b.backend_id === w.id || b.backend_id === w.device_name,
+      );
+      const placements = workerPlacements.length > 0 ? workerPlacements : [undefined];
+      const multiple = placements.length > 1;
 
       const isLoopback = w.is_loopback || w.host === "127.0.0.1" || w.host === "localhost";
-      const isParticipating = layersCount > 0;
 
       // Find matching node telemetry if available
       const nodeMatch = nodesData?.nodes?.find((n) =>
@@ -420,115 +423,142 @@ function useSwarmSessionState(pollIntervalMs: number): SwarmSession {
       );
       const isStaleTelemetry = nodeMatch?.is_stale === true;
 
-      // Determine state according to backend semantics
-      let helperStatus: SwarmDevice["status"] = "reachable";
-      let helperStatusLabel = "Reachable";
-      let diagnostic: DeviceDiagnostic | undefined = undefined;
-
       const workerStateUpper = (w.state || "").toUpperCase();
       const hasError = !!w.last_error && w.last_error.trim().length > 0;
       const isFailedOrUnavailable = workerStateUpper === "FAILED" || workerStateUpper === "UNAVAILABLE";
 
-      if (isFailedOrUnavailable) {
-        helperStatus = workerStateUpper === "FAILED" ? "error" : "offline";
-        helperStatusLabel = workerStateUpper === "FAILED" ? "Failed" : "Offline";
-        const errorDetail = w.last_error ? ` Reported error: ${w.last_error}` : "";
-        diagnostic = {
-          severity: "error",
-          title: `RPC Worker ${helperStatusLabel} (${w.host}:${w.port})`,
-          message: `The coordinator cannot communicate with the RPC worker at ${w.host}:${w.port}.${errorDetail}`,
-          consequence: isParticipating
-            ? `Critical: ${layersCount} model layers (${rangeLabel}) are allocated to this worker. Due to GGML RPC protocol constraints, inference will abort or fail without this worker.`
-            : `Non-critical: 0 model layers are mapped to this worker. Local host inference is operational, but distributed execution cannot use this node.`,
-          recoveryAction: isParticipating
-            ? `Restart the RPC worker process on ${w.host}:${w.port}. Then reload the model or restart the coordinator to re-establish the GGML tensor pipeline.`
-            : `Check the worker process on ${w.host}:${w.port} before assigning model layers to it.`,
-        };
-      } else if (hasError && workerStateUpper !== "READY") {
-        helperStatus = "error";
-        helperStatusLabel = "Error";
-        diagnostic = {
-          severity: "warning",
-          title: `RPC Worker Warning (${w.host}:${w.port})`,
-          message: `Worker reported an issue: ${w.last_error}`,
-          consequence: isParticipating
-            ? `Inference using this worker may fail. Active layers: ${rangeLabel}.`
-            : `Worker holds 0 layers; local host inference continues.`,
-          recoveryAction: `Verify worker logs at ${w.host}:${w.port}.`,
-        };
-      } else if (workerStateUpper === "STOPPED") {
-        helperStatus = "offline";
-        helperStatusLabel = "Stopped";
-      } else if (workerStateUpper === "BUSY" || (isParticipating && isGenerating)) {
-        helperStatus = "busy";
-        helperStatusLabel = "Busy";
-        if (isStaleTelemetry) {
-          diagnostic = {
-            severity: "info",
-            title: "Telemetry Stale",
-            message: "Node telemetry has not updated in >30s, but RPC connection is active.",
-          };
-        }
-      } else if (workerStateUpper === "READY") {
-        if (isParticipating) {
-          helperStatus = "ready";
-          helperStatusLabel = "Ready";
-        } else {
-          helperStatus = "idle";
-          helperStatusLabel = "Idle (0 layers)";
-        }
-        if (isStaleTelemetry) {
-          diagnostic = {
-            severity: "info",
-            title: "Telemetry Stale",
-            message: "Optional node telemetry has not updated in >30s, but RPC connection is active and healthy.",
-          };
-        }
-      } else if (workerStateUpper === "STARTING") {
-        helperStatus = "reachable";
-        helperStatusLabel = "Starting";
-      } else {
-        helperStatus = isParticipating ? "ready" : "idle";
-        helperStatusLabel = isParticipating ? "Ready" : "Idle (0 layers)";
-      }
+      const nodeRamTotal = nodeMatch?.ram_total_bytes?.value ?? nodeMatch?.ram_total?.value ?? 0;
+      const nodeRamFree = nodeMatch?.ram_free_bytes?.value ?? nodeMatch?.ram_available?.value ?? 0;
 
-      helperDevices.push({
-        id: w.id,
-        name: isLoopback ? "Test helper" : (w.device_name || `Helper (${w.host})`),
-        role: "helper",
-        isLocalHost: false,
-        isLoopback,
-        status: helperStatus,
-        statusLabel: helperStatusLabel,
-        assignedLayersCount: layersCount,
-        totalModelLayers: totalLayers,
-        sharePercent: totalLayers > 0 ? Math.round((layersCount / totalLayers) * 100) : 0,
-        ramTotalBytes: isLoopback
-          ? hostRamTotal
-          : (nodeMatch?.ram_total_bytes?.value ?? nodeMatch?.ram_total?.value ?? w.memory_total_bytes ?? 0),
-        ramFreeBytes: isLoopback
-          ? hostRamAvail
-          : (nodeMatch?.ram_free_bytes?.value ?? nodeMatch?.ram_available?.value ?? w.memory_free_bytes ?? 0),
-        vramTotalBytes: (nodeMatch?.vram_total_bytes?.value != null ? nodeMatch.vram_total_bytes.value : nodeMatch?.gpu_vram?.value) ?? undefined,
-        vramFreeBytes: (nodeMatch?.vram_free_bytes?.value != null ? nodeMatch.vram_free_bytes.value : undefined),
-        reserveBytes: effectiveReserveRam,
-        isBelowReserve: isLoopback ? isBelowReserve : false,
-        processors: [
-          {
-            name: isLoopback ? "RPC (Local Process)" : "Remote RPC Worker",
-            type: "rpc",
-            layerCount: layersCount,
-            rangeLabel,
-            modelBufferBytes: matchPlacement?.model_buffer_bytes ?? w.model_buffer_bytes ?? 0,
-          },
-        ],
-        connectionAddress: `${w.host}:${w.port}`,
-        provenance: matchPlacement?.log_derived ? "Measured" : (nodeMatch ? "Telemetry" : "Reported"),
-        endpointUrl: `http://${w.host}:${w.port}`,
-        lastError: w.last_error,
-        diagnostic,
-        isStaleTelemetry,
-        lastSeenMs: nodeMatch?.ram_total_bytes?.observed_at_ms || nodeMatch?.ram_total?.observed_at_ms,
+      placements.forEach((matchPlacement, placementIndex) => {
+        const layersCount = matchPlacement?.assigned_layers?.length ?? w.assigned_layers?.length ?? 0;
+        const rangeLabel = matchPlacement?.assigned_layer_ranges?.map(([s, e]) => (s === e ? `L${s}` : `L${s}–L${e}`)).join(", ") || (w.assigned_layers?.length > 0 ? `L${w.assigned_layers[0]}–L${w.assigned_layers[w.assigned_layers.length - 1]}` : "0 layers");
+        const isParticipating = layersCount > 0;
+
+        // Determine state according to backend semantics
+        let helperStatus: SwarmDevice["status"] = "reachable";
+        let helperStatusLabel = "Reachable";
+        let diagnostic: DeviceDiagnostic | undefined = undefined;
+
+        if (isFailedOrUnavailable) {
+          helperStatus = workerStateUpper === "FAILED" ? "error" : "offline";
+          helperStatusLabel = workerStateUpper === "FAILED" ? "Failed" : "Offline";
+          const errorDetail = w.last_error ? ` Reported error: ${w.last_error}` : "";
+          diagnostic = {
+            severity: "error",
+            title: `RPC Worker ${helperStatusLabel} (${w.host}:${w.port})`,
+            message: `The coordinator cannot communicate with the RPC worker at ${w.host}:${w.port}.${errorDetail}`,
+            consequence: isParticipating
+              ? `Critical: ${layersCount} model layers (${rangeLabel}) are allocated to this worker. Due to GGML RPC protocol constraints, inference will abort or fail without this worker.`
+              : `Non-critical: 0 model layers are mapped to this worker. Local host inference is operational, but distributed execution cannot use this node.`,
+            recoveryAction: isParticipating
+              ? `Restart the RPC worker process on ${w.host}:${w.port}. Then reload the model or restart the coordinator to re-establish the GGML tensor pipeline.`
+              : `Check the worker process on ${w.host}:${w.port} before assigning model layers to it.`,
+          };
+        } else if (hasError && workerStateUpper !== "READY") {
+          helperStatus = "error";
+          helperStatusLabel = "Error";
+          diagnostic = {
+            severity: "warning",
+            title: `RPC Worker Warning (${w.host}:${w.port})`,
+            message: `Worker reported an issue: ${w.last_error}`,
+            consequence: isParticipating
+              ? `Inference using this worker may fail. Active layers: ${rangeLabel}.`
+              : `Worker holds 0 layers; local host inference continues.`,
+            recoveryAction: `Verify worker logs at ${w.host}:${w.port}.`,
+          };
+        } else if (workerStateUpper === "STOPPED") {
+          helperStatus = "offline";
+          helperStatusLabel = "Stopped";
+        } else if (workerStateUpper === "BUSY" || (isParticipating && isGenerating)) {
+          helperStatus = "busy";
+          helperStatusLabel = "Busy";
+          if (isStaleTelemetry) {
+            diagnostic = {
+              severity: "info",
+              title: "Telemetry Stale",
+              message: "Node telemetry has not updated in >30s, but RPC connection is active.",
+            };
+          }
+        } else if (workerStateUpper === "READY") {
+          if (isParticipating) {
+            helperStatus = "ready";
+            helperStatusLabel = "Ready";
+          } else {
+            helperStatus = "idle";
+            helperStatusLabel = "Idle (0 layers)";
+          }
+          if (isStaleTelemetry) {
+            diagnostic = {
+              severity: "info",
+              title: "Telemetry Stale",
+              message: "Optional node telemetry has not updated in >30s, but RPC connection is active and healthy.",
+            };
+          }
+        } else if (workerStateUpper === "STARTING") {
+          helperStatus = "reachable";
+          helperStatusLabel = "Starting";
+        } else {
+          helperStatus = isParticipating ? "ready" : "idle";
+          helperStatusLabel = isParticipating ? "Ready" : "Idle (0 layers)";
+        }
+
+        const placementTotal = matchPlacement?.memory_total_bytes ?? 0;
+        const placementFree = matchPlacement?.memory_free_bytes ?? 0;
+        // RPC devices report their memory as device memory. When the worker
+        // exports CPU, that number is the host RAM instead.
+        const isCpuShare = placementTotal > 0 && nodeRamTotal > 0 && placementTotal >= nodeRamTotal * 0.9;
+        const placementLabel = matchPlacement?.backend_id;
+        const deviceName = multiple
+          ? isLoopback
+            ? `Test helper · ${placementLabel ?? placementIndex}`
+            : `${placementLabel ?? `RPC${placementIndex}`} · ${w.host}`
+          : isLoopback
+            ? "Test helper"
+            : (w.device_name || `Helper (${w.host})`);
+
+        helperDevices.push({
+          id: multiple ? `${w.id}::${placementLabel ?? placementIndex}` : w.id,
+          name: deviceName,
+          role: "helper",
+          isLocalHost: false,
+          isLoopback,
+          status: helperStatus,
+          statusLabel: helperStatusLabel,
+          assignedLayersCount: layersCount,
+          totalModelLayers: totalLayers,
+          sharePercent: totalLayers > 0 ? Math.round((layersCount / totalLayers) * 100) : 0,
+          ramTotalBytes: isLoopback
+            ? hostRamTotal
+            : (nodeRamTotal || w.memory_total_bytes || 0),
+          ramFreeBytes: isLoopback
+            ? hostRamAvail
+            : (nodeRamFree || w.memory_free_bytes || 0),
+          vramTotalBytes: !isCpuShare && placementTotal > 0
+            ? placementTotal
+            : (nodeMatch?.vram_total_bytes?.value != null ? nodeMatch.vram_total_bytes.value : nodeMatch?.gpu_vram?.value) ?? undefined,
+          vramFreeBytes: !isCpuShare && placementFree > 0
+            ? placementFree
+            : (nodeMatch?.vram_free_bytes?.value != null ? nodeMatch.vram_free_bytes.value : undefined),
+          reserveBytes: effectiveReserveRam,
+          isBelowReserve: isLoopback ? isBelowReserve : false,
+          processors: [
+            {
+              name: isLoopback ? "RPC (Local Process)" : "Remote RPC Worker",
+              type: "rpc",
+              layerCount: layersCount,
+              rangeLabel,
+              modelBufferBytes: matchPlacement?.model_buffer_bytes ?? w.model_buffer_bytes ?? 0,
+            },
+          ],
+          connectionAddress: `${w.host}:${w.port}`,
+          provenance: matchPlacement?.log_derived ? "Measured" : (nodeMatch ? "Telemetry" : "Reported"),
+          endpointUrl: `http://${w.host}:${w.port}`,
+          lastError: w.last_error,
+          diagnostic,
+          isStaleTelemetry,
+          lastSeenMs: nodeMatch?.ram_total_bytes?.observed_at_ms || nodeMatch?.ram_total?.observed_at_ms,
+        });
       });
     });
 

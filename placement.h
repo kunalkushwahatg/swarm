@@ -10,6 +10,7 @@
 #include <sstream>
 #include <fstream>
 #include <cmath>
+#include <cstdlib>
 #include <algorithm>
 #include <iostream>
 #include <optional>
@@ -29,6 +30,7 @@ struct BackendPlacement {
     std::string backend_type;           // "loopback_rpc", "remote_rpc", "local_cuda", "cpu"
     bool is_loopback = false;           // true if loopback address
     std::string memory_scope;           // "shared_host", "device_vram", "remote_host:<ip>"
+    int device_index = -1;              // server-local device index for RPC backends
     std::vector<int> assigned_layers;   // Sorted layer indices
     std::vector<std::pair<int, int>> assigned_layer_ranges; // Ranges [start, end]
     size_t model_buffer_bytes = 0;      // Model weights buffer
@@ -55,6 +57,7 @@ struct BackendPlacement {
         j["backend_type"] = backend_type;
         j["is_loopback"] = is_loopback;
         j["memory_scope"] = memory_scope;
+        j["device_index"] = device_index;
         j["assigned_layers"] = assigned_layers;
         
         json ranges_json = json::array();
@@ -102,7 +105,8 @@ public:
                           bool is_loopback,
                           const std::string& memory_scope,
                           size_t memory_total_bytes,
-                          size_t memory_free_bytes) {
+                          size_t memory_free_bytes,
+                          int device_index = -1) {
         std::lock_guard<std::mutex> lock(mutex_);
         BackendPlacement bp;
         bp.backend_id = backend_id;
@@ -112,6 +116,7 @@ public:
         bp.backend_type = backend_type;
         bp.is_loopback = is_loopback;
         bp.memory_scope = memory_scope;
+        bp.device_index = device_index;
         bp.memory_total_bytes = memory_total_bytes;
         bp.memory_free_bytes = memory_free_bytes;
         bp.measurement_status = "unavailable";
@@ -338,7 +343,32 @@ private:
         size_t open_b = buf_name.find('[');
         size_t close_b = buf_name.find(']');
         if (open_b != std::string::npos && close_b != std::string::npos && close_b > open_b) {
-            std::string ep = buf_name.substr(open_b + 1, close_b - open_b - 1);
+            const std::string ep = buf_name.substr(open_b + 1, close_b - open_b - 1);
+            const std::string prefix = buf_name.substr(0, open_b);
+
+            // The GGML device name and the buffer prefix agree for the first
+            // RPC server, so try that exact match first. Match the endpoint
+            // too: a second server also uses RPC0[<its endpoint>].
+            for (auto& [id, bp] : backends_) {
+                if (bp.backend_id == prefix && bp.endpoint == ep) {
+                    return &bp;
+                }
+            }
+
+            // Multi-device servers use the server-local index in the buffer
+            // name (RPC0[ep], RPC1[ep]) even when the global device id is
+            // higher (RPC2, RPC3). Resolve by endpoint + local index.
+            const size_t digit_start = prefix.find_first_of("0123456789");
+            if (digit_start != std::string::npos) {
+                const int local_index = std::atoi(prefix.c_str() + digit_start);
+                for (auto& [id, bp] : backends_) {
+                    if (bp.endpoint == ep && bp.device_index == local_index) {
+                        return &bp;
+                    }
+                }
+            }
+
+            // Fallback for older registrations without a device index.
             for (auto& [id, bp] : backends_) {
                 if (bp.endpoint == ep) {
                     return &bp;

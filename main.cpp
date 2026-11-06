@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -62,13 +63,13 @@ static BOOL CtrlHandler(DWORD fdwCtrlType) {
 }
 #endif
 
-static ggml_backend_dev_t add_rpc_server(const char *endpoint) {
+static std::vector<ggml_backend_dev_t> add_rpc_server(const char *endpoint) {
     log_info("[RPC] Connecting to RPC worker at: " + std::string(endpoint));
     ggml_backend_load_all();
     ggml_backend_reg_t rpc_reg = ggml_backend_reg_by_name("RPC");
     if (!rpc_reg) {
         log_error("[RPC Error] RPC backend module not found!");
-        return nullptr;
+        return {};
     }
 
     using add_server_fn = ggml_backend_reg_t (*)(const char *);
@@ -77,7 +78,7 @@ static ggml_backend_dev_t add_rpc_server(const char *endpoint) {
             rpc_reg, "ggml_backend_rpc_add_server"));
     if (!add_server) {
         log_error("[RPC Error] ggml_backend_rpc_add_server symbol not found!");
-        return nullptr;
+        return {};
     }
 
     ggml_backend_reg_t server_reg = add_server(endpoint);
@@ -85,11 +86,22 @@ static ggml_backend_dev_t add_rpc_server(const char *endpoint) {
         log_error("[RPC Error] Failed to connect to RPC server at " + std::string(endpoint) +
                   ".\n[RPC Help] Ensure 'rpc-server' is running on " + std::string(endpoint) +
                   " and firewall port 50052 is open.");
-        return nullptr;
+        return {};
     }
     ggml_backend_register(server_reg);
-    log_info("[RPC] Successfully connected to RPC worker at " + std::string(endpoint));
-    return ggml_backend_reg_dev_get(server_reg, 0);
+
+    std::vector<ggml_backend_dev_t> devices;
+    const size_t device_count = ggml_backend_reg_dev_count(server_reg);
+    for (size_t i = 0; i < device_count; ++i) {
+        ggml_backend_dev_t device = ggml_backend_reg_dev_get(server_reg, i);
+        if (device) {
+            devices.push_back(device);
+        }
+    }
+
+    log_info("[RPC] Successfully connected to RPC worker at " + std::string(endpoint) +
+             " (" + std::to_string(devices.size()) + " device(s) exported)");
+    return devices;
 }
 
 static const char *device_type_name(enum ggml_backend_dev_type type) {
@@ -171,12 +183,12 @@ static void print_device_report(const json &report) {
     }
 }
 
-static std::optional<ggml_backend_dev_t> create_rpc_device_from_worker(
+static std::vector<ggml_backend_dev_t> create_rpc_devices_from_worker(
     const WorkerInfo& worker,
     std::vector<std::shared_ptr<RpcTelemetryProxy>>& telemetry_proxies) {
     if ((worker.type != WorkerType::LOCAL_RPC && worker.type != WorkerType::REMOTE_RPC) ||
         (worker.state != WorkerState::READY && worker.state != WorkerState::BUSY)) {
-        return std::nullopt;
+        return {};
     }
 
     const std::string real_endpoint = worker.host + ":" + std::to_string(worker.port);
@@ -195,11 +207,7 @@ static std::optional<ggml_backend_dev_t> create_rpc_device_from_worker(
                  worker.id + "'");
     }
 
-    ggml_backend_dev_t device = add_rpc_server(endpoint.c_str());
-    if (device) {
-        return device;
-    }
-    return std::nullopt;
+    return add_rpc_server(endpoint.c_str());
 }
 
 static bool parse_gpu_layer_setting(const char *value, int32_t &n_gpu_layers) {
@@ -354,40 +362,94 @@ int main() {
         worker_manager.check_worker_health(worker.id);
     }
 
+    struct RegisteredRpcDevice {
+        std::string worker_id;
+        std::string host;
+        uint16_t port = 0;
+        std::string backend_id;
+        std::string endpoint;
+        bool is_loopback = false;
+        size_t memory_total_bytes = 0;
+        size_t memory_free_bytes = 0;
+    };
+    std::vector<RegisteredRpcDevice> registered_rpc_devices;
+
     for (auto& worker : worker_manager.get_workers()) {
         if (worker.type == WorkerType::REMOTE_RPC || worker.type == WorkerType::LOCAL_RPC) {
-            auto device = create_rpc_device_from_worker(worker, telemetry_proxies);
-            if (!device) {
+            auto devices = create_rpc_devices_from_worker(worker, telemetry_proxies);
+            if (devices.empty()) {
                 log_error("[RPC] Failed to register worker '" + worker.id + "' before model loading");
                 worker_manager.stop_local_workers();
                 llama_backend_free();
                 return 1;
             }
-            worker_manager.add_rpc_device(*device);
-            ggml_backend_dev_props props;
-            ggml_backend_dev_get_props(*device, &props);
-            std::string dev_name = ggml_backend_dev_name(*device);
-            std::string ep = worker.host + ":" + std::to_string(worker.port);
-            bool is_loopback = PlacementTracker::is_loopback_address(worker.host);
-            std::string mem_scope = is_loopback ? "shared_host" : ("remote_host:" + worker.host);
-            worker_manager.update_worker(worker.id, [&](WorkerInfo& registered) {
-                registered.device_name = dev_name;
-                registered.has_active_backend_connection = true;
-                registered.memory_total_bytes = props.memory_total;
-                registered.memory_free_bytes = props.memory_free;
-            });
-            g_placement_tracker.register_backend(dev_name, dev_name, ep, ep,
-                                                 is_loopback ? "loopback_rpc" : "remote_rpc",
-                                                 is_loopback, mem_scope,
-                                                 props.memory_total, props.memory_free);
-            log_info("[RPC] Registered device for worker '" + worker.id + "': " + dev_name + " (" + ep + ")");
-            log_info("[RPC] Device memory for '" + worker.id + "': " +
-                     format_bytes(props.memory_free) + " free / " +
-                     format_bytes(props.memory_total) + " total");
+
+            const std::string ep = worker.host + ":" + std::to_string(worker.port);
+            const bool is_loopback = PlacementTracker::is_loopback_address(worker.host);
+            const std::string mem_scope = is_loopback ? "shared_host" : ("remote_host:" + worker.host);
+
+            for (size_t i = 0; i < devices.size(); ++i) {
+                ggml_backend_dev_t device = devices[i];
+                worker_manager.add_rpc_device(device);
+
+                ggml_backend_dev_props props;
+                ggml_backend_dev_get_props(device, &props);
+                std::string dev_name = ggml_backend_dev_name(device);
+
+                // WorkerInfo keeps the first device for backward compatibility;
+                // the placement tracker and candidate list carry every device.
+                if (i == 0) {
+                    worker_manager.update_worker(worker.id, [&](WorkerInfo& registered) {
+                        registered.device_name = dev_name;
+                        registered.has_active_backend_connection = true;
+                        registered.memory_total_bytes = props.memory_total;
+                        registered.memory_free_bytes = props.memory_free;
+                    });
+                }
+
+                // A single RPC server can export several devices. Use the
+                // unique GGML device name (RPC0, RPC1, ...) as the backend id.
+                g_placement_tracker.register_backend(dev_name, dev_name, ep, ep,
+                                                     is_loopback ? "loopback_rpc" : "remote_rpc",
+                                                     is_loopback, mem_scope,
+                                                     props.memory_total, props.memory_free,
+                                                     static_cast<int>(i));
+
+                RegisteredRpcDevice info;
+                info.worker_id = worker.id;
+                info.host = worker.host;
+                info.port = worker.port;
+                info.backend_id = dev_name;
+                info.endpoint = ep;
+                info.is_loopback = is_loopback;
+                info.memory_total_bytes = props.memory_total;
+                info.memory_free_bytes = props.memory_free;
+                registered_rpc_devices.push_back(info);
+
+                log_info("[RPC] Registered device for worker '" + worker.id + "': " + dev_name + " (" + ep + ")");
+                log_info("[RPC] Device memory for '" + worker.id + "': " +
+                         format_bytes(props.memory_free) + " free / " +
+                         format_bytes(props.memory_total) + " total");
+            }
         }
     }
 
-    ggml_backend_dev_t gpu_device = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
+    // Pick the local accelerator, never a remote RPC device. Remote RPC
+    // devices are advertised as GPU type by upstream ggml, so a CPU-only
+    // coordinator could otherwise mistake a worker for its own GPU.
+    ggml_backend_dev_t gpu_device = nullptr;
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        ggml_backend_dev_t candidate = ggml_backend_dev_get(i);
+        if (!candidate || ggml_backend_dev_type(candidate) != GGML_BACKEND_DEVICE_TYPE_GPU) {
+            continue;
+        }
+        const char *candidate_name = ggml_backend_dev_name(candidate);
+        if (candidate_name && std::strncmp(candidate_name, "RPC", 3) == 0) {
+            continue;
+        }
+        gpu_device = candidate;
+        break;
+    }
     std::string gpu_name = "None";
     ggml_backend_dev_props gpu_props = {};
     if (gpu_device) {
@@ -531,38 +593,36 @@ int main() {
         std::chrono::system_clock::now().time_since_epoch()).count());
 
     std::vector<PlacementPolicyEngine::CandidateDevice> candidate_devices;
-    for (const auto& worker : worker_manager.get_workers()) {
-        if (worker.type == WorkerType::REMOTE_RPC || worker.type == WorkerType::LOCAL_RPC) {
-            if (worker.state == WorkerState::READY) {
-                PlacementPolicyEngine::CandidateDevice cd;
-                cd.primary_id = worker.host + ":" + std::to_string(worker.port);
-                cd.secondary_id = worker.id;
-                cd.device_name = worker.device_name.value_or("RPC");
-                cd.backend_type = PlacementTracker::is_loopback_address(worker.host) ? "loopback_rpc" : "remote_rpc";
-                cd.is_loopback = PlacementTracker::is_loopback_address(worker.host);
-                cd.memory_scope = cd.is_loopback ? "shared_host" : ("remote_host:" + worker.host);
-                cd.physical_memory_free = worker.memory_free_bytes.value_or(0);
-                cd.physical_memory_total = worker.memory_total_bytes.value_or(0);
+    for (const auto& rd : registered_rpc_devices) {
+        PlacementPolicyEngine::CandidateDevice cd;
+        // primary_id must identify one device, not one socket, so two GPUs
+        // exported by the same worker stay distinct in the placement plan.
+        cd.primary_id = rd.backend_id;
+        cd.secondary_id = rd.endpoint;
+        cd.device_name = rd.backend_id;
+        cd.backend_type = rd.is_loopback ? "loopback_rpc" : "remote_rpc";
+        cd.is_loopback = rd.is_loopback;
+        cd.memory_scope = rd.is_loopback ? "shared_host" : ("remote_host:" + rd.host);
+        cd.physical_memory_free = rd.memory_free_bytes;
+        cd.physical_memory_total = rd.memory_total_bytes;
 
-                auto node_opt = g_node_inventory.find_node(cd.primary_id, now_ms);
-                if (!node_opt.has_value()) {
-                    node_opt = g_node_inventory.find_node(cd.secondary_id, now_ms);
-                }
-                if (node_opt.has_value()) {
-                    const auto& node = node_opt.value();
-                    cd.has_agent_telemetry = node.agent_reported;
-                    cd.telemetry_age_ms = (now_ms > node.last_receipt_time_ms) ? (now_ms - node.last_receipt_time_ms) : 0;
-                    cd.is_stale = node.is_stale || (cd.telemetry_age_ms > 30000);
-                    cd.provenance = provenance_to_string(node.ram_free_bytes.provenance);
-                    cd.agent_ram_total = node.ram_total_bytes.value.value_or(0);
-                    cd.agent_ram_available = node.ram_free_bytes.value.value_or(0);
-                    cd.agent_vram_total = node.vram_total_bytes.value.value_or(0);
-                    cd.is_simulated = node.is_simulated;
-                }
-
-                candidate_devices.push_back(cd);
-            }
+        auto node_opt = g_node_inventory.find_node(rd.endpoint, now_ms);
+        if (!node_opt.has_value()) {
+            node_opt = g_node_inventory.find_node(rd.worker_id, now_ms);
         }
+        if (node_opt.has_value()) {
+            const auto& node = node_opt.value();
+            cd.has_agent_telemetry = node.agent_reported;
+            cd.telemetry_age_ms = (now_ms > node.last_receipt_time_ms) ? (now_ms - node.last_receipt_time_ms) : 0;
+            cd.is_stale = node.is_stale || (cd.telemetry_age_ms > 30000);
+            cd.provenance = provenance_to_string(node.ram_free_bytes.provenance);
+            cd.agent_ram_total = node.ram_total_bytes.value.value_or(0);
+            cd.agent_ram_available = node.ram_free_bytes.value.value_or(0);
+            cd.agent_vram_total = node.vram_total_bytes.value.value_or(0);
+            cd.is_simulated = node.is_simulated;
+        }
+
+        candidate_devices.push_back(cd);
     }
     if (gpu_device) {
         PlacementPolicyEngine::CandidateDevice cd;

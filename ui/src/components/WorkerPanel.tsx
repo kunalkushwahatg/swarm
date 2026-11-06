@@ -1,4 +1,4 @@
-import { useState, useId, useEffect } from "react";
+import { useState, useId, useEffect, type CSSProperties } from "react";
 import QRCode from "qrcode";
 import { useWorkerMode } from "../hooks/useWorkerMode";
 import { isAndroid } from "../lib/platform";
@@ -40,6 +40,21 @@ function formatInterfaceLabel(ip: string, alias?: string): string {
   if (ip.startsWith("192.168.")) return `${ip} (Wi-Fi / LAN)`;
   if (ip.startsWith("10.")) return `${ip} (Local Network)`;
   return ip;
+}
+
+function parseDeviceSelection(value: string): string[] {
+  return value
+    .split(",")
+    .map((v) => v.trim())
+    .filter((v) => {
+      const lower = v.toLowerCase();
+      return v.length > 0 && lower !== "all" && lower !== "auto" && lower !== "cuda";
+    });
+}
+
+function isAutoSelection(value: string): boolean {
+  const trimmed = value.trim().toLowerCase();
+  return trimmed === "" || trimmed === "all" || trimmed === "auto" || trimmed === "cuda";
 }
 
 export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
@@ -96,6 +111,51 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
   const isListening = status?.is_listening || false;
   const currentState = status?.state || (isLoading ? "Loading" : "Stopped");
   const isBusyOrStarting = isStarting || isStopping || currentState === "Starting" || currentState === "CheckingPrerequisites";
+
+  // Device sharing selection. "all" lets the RPC server export every
+  // accelerator; a comma list exports exactly those devices.
+  const availableGpus = hardware?.gpus?.length
+    ? hardware.gpus
+    : hardware?.gpu_name
+      ? [{
+          index: 0,
+          name: hardware.gpu_name,
+          total_vram_mb: hardware.total_vram_mb ?? 0,
+          available_vram_mb: hardware.available_vram_mb ?? 0,
+        }]
+      : [];
+  const deviceSelection = parseDeviceSelection(backendDevice);
+  const autoSelection = isAutoSelection(backendDevice);
+  const exportedDevices = autoSelection
+    ? (availableGpus.length > 0 ? availableGpus.map((_, i) => `CUDA${i}`) : ["CPU"])
+    : deviceSelection;
+  const exportedDeviceArg = exportedDevices.join(",");
+  const backendChips = isAndroid ? (hardware?.supported_backends ?? []) : exportedDevices;
+
+  const savedSelection = status?.config?.backend_device || "all";
+  const savedDevices = isAutoSelection(savedSelection)
+    ? (availableGpus.length > 0 ? availableGpus.map((_, i) => `CUDA${i}`) : ["CPU"])
+    : parseDeviceSelection(savedSelection);
+  const selectionChanged = isListening && savedDevices.join(",") !== exportedDeviceArg;
+
+  const shareChipStyle = (active: boolean): CSSProperties => ({
+    fontSize: 11.5,
+    fontWeight: 600,
+    padding: "4px 10px",
+    borderRadius: 999,
+    border: active ? "1px solid var(--color-accent)" : "1px solid var(--color-border)",
+    background: active ? "var(--color-accent-subtle)" : "var(--color-surface)",
+    color: active ? "var(--color-accent)" : "var(--color-text-2)",
+    cursor: "pointer",
+  });
+
+  const toggleDevice = (name: string) => {
+    const current = parseDeviceSelection(backendDevice);
+    const next = current.includes(name)
+      ? current.filter((d) => d !== name)
+      : [...current, name];
+    setBackendDevice(next.length > 0 ? next.join(",") : "all");
+  };
 
   const pairingCode = status?.pairing_code || "";
   const pairingLink = pairingCode
@@ -202,7 +262,7 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
             </span>
           </div>
           <div className="page-subtitle" style={{ marginTop: 4, fontSize: 13, color: "var(--color-text-2)" }}>
-            Share this machine's GPU and CPU compute with phones and other nodes in your swarm.
+            Share this machine's compute with phones and other nodes in your swarm. Pick exactly which devices to export.
           </div>
         </div>
 
@@ -417,7 +477,7 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
               Provide Compute
             </h3>
             <p style={{ fontSize: 11, color: "var(--color-text-2)", margin: 0, lineHeight: 1.4 }}>
-              Worker mode. Shares local GPU and CPU compute with other computers on your network.
+              Worker mode. Shares the compute you select with other computers on your network.
             </p>
           </div>
 
@@ -505,6 +565,152 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
           </button>
         </div>
 
+        {!isAndroid && (
+          <div
+            style={{
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-sm)",
+              padding: "12px 14px",
+              background: "var(--color-surface-subtle)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Layers size={14} color="var(--color-accent)" />
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--color-text)" }}>
+                  Compute to share
+                </span>
+              </div>
+              <span
+                className="mono"
+                title="Devices passed to ggml-rpc-server via -d"
+                style={{ fontSize: 11, color: "var(--color-text-3)" }}
+              >
+                {exportedDeviceArg ? `-d ${exportedDeviceArg}` : "auto"}
+              </span>
+            </div>
+
+            <div
+              role="radiogroup"
+              aria-label="Compute sharing mode"
+              style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}
+            >
+              <button
+                type="button"
+                role="radio"
+                aria-checked={autoSelection}
+                onClick={() => setBackendDevice("all")}
+                style={shareChipStyle(autoSelection)}
+              >
+                All accelerators
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={!autoSelection}
+                onClick={() => {
+                  if (isAutoSelection(backendDevice)) {
+                    setBackendDevice(
+                      availableGpus.length > 0
+                        ? availableGpus.map((_, i) => `CUDA${i}`).join(",")
+                        : "CPU",
+                    );
+                  }
+                }}
+                style={shareChipStyle(!autoSelection)}
+              >
+                Choose devices
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--color-text-3)", marginTop: 6 }}>
+              {autoSelection
+                ? "Exports every accelerator this machine exposes."
+                : "Exports only the devices checked below."}
+            </div>
+
+            {selectionChanged && (
+              <div style={{ fontSize: 11, color: "var(--color-warn)", marginTop: 8 }}>
+                Restart sharing to apply the new device selection.
+              </div>
+            )}
+
+            {!autoSelection && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+                {availableGpus.map((gpu, index) => {
+                  const name = `CUDA${index}`;
+                  return (
+                    <label
+                      key={name}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        fontSize: 11.5,
+                        color: "var(--color-text)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={deviceSelection.includes(name)}
+                        onChange={() => toggleDevice(name)}
+                        style={{ accentColor: "var(--color-accent)" }}
+                      />
+                      <span style={{ fontWeight: 600 }}>{name}</span>
+                      <span style={{ color: "var(--color-text-2)" }}>{gpu.name}</span>
+                      <span className="mono" style={{ marginLeft: "auto", color: "var(--color-text-3)" }}>
+                        {gpu.total_vram_mb > 0 ? `${(gpu.total_vram_mb / 1024).toFixed(1)} GB` : "VRAM unknown"}
+                      </span>
+                    </label>
+                  );
+                })}
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 11.5,
+                    color: "var(--color-text)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={deviceSelection.includes("CPU")}
+                    onChange={() => toggleDevice("CPU")}
+                    style={{ accentColor: "var(--color-accent)" }}
+                  />
+                  <span style={{ fontWeight: 600 }}>CPU</span>
+                  <span style={{ color: "var(--color-text-2)" }}>
+                    {hardware ? `${hardware.logical_cores} cores` : "Host processor"}
+                  </span>
+                  <span className="mono" style={{ marginLeft: "auto", color: "var(--color-text-3)" }}>
+                    {hardware ? `${hardware.total_ram_mb.toLocaleString()} MB` : "RAM unknown"}
+                  </span>
+                </label>
+                {deviceSelection.length === 0 && (
+                  <div style={{ fontSize: 11, color: "var(--color-warn)" }}>
+                    Select at least one device, or switch back to All accelerators.
+                  </div>
+                )}
+                {deviceSelection.length > 1 && (
+                  <div style={{ fontSize: 11, color: "var(--color-text-3)" }}>
+                    Each selected device is exported as its own RPC backend.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
           {/* CPU Box */}
           <div style={{ padding: "12px 14px", background: "var(--color-surface-subtle)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" }}>
@@ -531,22 +737,37 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
           {/* GPU VRAM Box */}
           <div style={{ padding: "12px 14px", background: "var(--color-surface-subtle)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" }}>
             <div style={{ fontSize: 10.5, fontWeight: 600, color: "var(--color-text-3)", textTransform: "uppercase" }}>Graphics / VRAM</div>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--color-text)", marginTop: 2 }} title={hardware?.gpu_name || "Unavailable"}>
-              {hardware ? (hardware.gpu_name || "CPU-only") : "Unavailable"}
+            <div
+              style={{ fontSize: 12.5, fontWeight: 700, color: "var(--color-text)", marginTop: 2 }}
+              title={hardware?.gpu_name || "Unavailable"}
+            >
+              {hardware
+                ? availableGpus.length > 1
+                  ? `${availableGpus.length} GPUs`
+                  : hardware.gpu_name || "CPU-only"
+                : "Unavailable"}
             </div>
-            <div style={{ fontSize: 11, color: "var(--color-text-2)", marginTop: 2 }}>
-              {hardware?.available_vram_mb
-                ? `${hardware.available_vram_mb.toLocaleString()} MB free${hardware.total_vram_mb ? ` · ${hardware.total_vram_mb.toLocaleString()} MB total` : ""}`
-                : "Integrated / Shared memory"}
+            <div style={{ fontSize: 11, color: "var(--color-text-2)", marginTop: 2, display: "flex", flexDirection: "column", gap: 2 }}>
+              {availableGpus.length > 0
+                ? availableGpus.map((gpu, index) => (
+                    <span key={index}>
+                      {availableGpus.length > 1 ? `CUDA${index}: ` : ""}
+                      {gpu.available_vram_mb > 0 ? `${(gpu.available_vram_mb / 1024).toFixed(1)} GB free` : "free unknown"}
+                      {gpu.total_vram_mb > 0 ? ` of ${(gpu.total_vram_mb / 1024).toFixed(1)} GB` : ""}
+                    </span>
+                  ))
+                : hardware
+                  ? "Integrated / Shared memory"
+                  : "Telemetry unavailable"}
             </div>
           </div>
 
           {/* RPC Backends Box */}
           <div style={{ padding: "12px 14px", background: "var(--color-surface-subtle)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" }}>
             <div style={{ fontSize: 10.5, fontWeight: 600, color: "var(--color-text-3)", textTransform: "uppercase" }}>RPC Backends</div>
-            <div style={{ display: "flex", gap: 5, marginTop: 4 }}>
-              {hardware && hardware.supported_backends.length > 0 ? (
-                hardware.supported_backends.map((b) => (
+            <div style={{ display: "flex", gap: 5, marginTop: 4, flexWrap: "wrap" }}>
+              {hardware && backendChips.length > 0 ? (
+                backendChips.map((b) => (
                   <span
                     key={b}
                     style={{
@@ -566,7 +787,7 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
               )}
             </div>
             <div style={{ fontSize: 11, color: "var(--color-text-2)", marginTop: 3 }}>
-              Native RPC server ready
+              Exported over GGML RPC
             </div>
           </div>
         </div>

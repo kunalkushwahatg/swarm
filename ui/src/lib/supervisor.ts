@@ -496,6 +496,13 @@ export interface WorkerModeConfig {
   updated_at_ms: number;
 }
 
+export interface GpuDeviceInfo {
+  index: number;
+  name: string;
+  total_vram_mb: number;
+  available_vram_mb: number;
+}
+
 export interface WorkerHardwareTelemetry {
   cpu_name: string;
   logical_cores: number;
@@ -504,6 +511,7 @@ export interface WorkerHardwareTelemetry {
   total_vram_mb: number | null;
   available_vram_mb: number | null;
   gpu_name: string | null;
+  gpus?: GpuDeviceInfo[];
   supported_backends: string[];
   timestamp_ms: number;
 }

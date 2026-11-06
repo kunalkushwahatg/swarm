@@ -13,6 +13,61 @@ use super::process::{ProcessManager, ProcessRole, ProcessStatus};
 use super::shutdown::shutdown_managed_child;
 use super::win32::{get_available_physical_memory, get_local_ip_addresses, CREATE_NO_WINDOW};
 
+/// Accepts "all", a backend alias, or a comma-separated list of GGML device
+/// names such as "CUDA0,CUDA1" or "CPU".
+fn is_valid_backend_token(token: &str) -> bool {
+    let lower = token.to_ascii_lowercase();
+    if matches!(lower.as_str(), "all" | "auto" | "cuda" | "cpu" | "vulkan") {
+        return true;
+    }
+    let mut chars = token.chars();
+    match chars.next() {
+        Some(first) if first.is_ascii_alphabetic() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+}
+
+/// Canonicalises a backend selection. Returns None when any token is invalid.
+fn normalize_backend_selection(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Some("all".to_string());
+    }
+
+    let mut tokens: Vec<String> = Vec::new();
+    for raw in trimmed.split(',') {
+        let token = raw.trim();
+        if token.is_empty() {
+            continue;
+        }
+        if !is_valid_backend_token(token) {
+            return None;
+        }
+        if token.eq_ignore_ascii_case("all") || token.eq_ignore_ascii_case("auto") {
+            return Some("all".to_string());
+        }
+        let canonical = if token.eq_ignore_ascii_case("cuda") {
+            "cuda".to_string()
+        } else if token.eq_ignore_ascii_case("cpu") {
+            "CPU".to_string()
+        } else if token.eq_ignore_ascii_case("vulkan") {
+            "vulkan".to_string()
+        } else {
+            token.to_string()
+        };
+        if !tokens.iter().any(|existing| existing == &canonical) {
+            tokens.push(canonical);
+        }
+    }
+
+    if tokens.is_empty() {
+        None
+    } else {
+        Some(tokens.join(","))
+    }
+}
+
 /// Operating roles supported by the Swarm Desktop application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -68,6 +123,15 @@ impl Default for WorkerModeConfig {
     }
 }
 
+/// One physical accelerator that the RPC server can expose.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuDeviceInfo {
+    pub index: u32,
+    pub name: String,
+    pub total_vram_mb: u64,
+    pub available_vram_mb: u64,
+}
+
 /// Point-in-time hardware capability and telemetry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerHardwareTelemetry {
@@ -78,6 +142,9 @@ pub struct WorkerHardwareTelemetry {
     pub total_vram_mb: Option<u64>,
     pub available_vram_mb: Option<u64>,
     pub gpu_name: Option<String>,
+    /// Every accelerator enumerated on this machine, in stable order.
+    #[serde(default)]
+    pub gpus: Vec<GpuDeviceInfo>,
     pub supported_backends: Vec<String>,
     pub timestamp_ms: u64,
 }
@@ -209,16 +276,15 @@ impl WorkerModeManager {
         if config.threads == 0 || config.threads > 128 {
             return Err("Validation Error: CPU thread count must be between 1 and 128.".to_string());
         }
-        if config.backend_device != "all"
-            && config.backend_device != "cuda"
-            && config.backend_device != "cpu"
-            && config.backend_device != "vulkan"
-        {
-            return Err(format!(
-                "Validation Error: Unsupported backend device '{}'. Supported: 'all', 'cuda', 'cpu', 'vulkan'.",
-                config.backend_device
-            ));
+        if config.backend_device.trim().is_empty() {
+            config.backend_device = "all".to_string();
         }
+        config.backend_device = normalize_backend_selection(&config.backend_device).ok_or_else(|| {
+            format!(
+                "Validation Error: Unsupported backend selection '{}'. Use 'all', 'cuda', 'cpu', 'vulkan', or a comma-separated list such as 'CUDA0,CUDA1'.",
+                config.backend_device
+            )
+        })?;
 
         // Loopback is the safe default. If remote access is not explicitly authorized,
         // force/verify listen_host is 127.0.0.1.
@@ -475,7 +541,10 @@ impl WorkerModeManager {
 
         let cpu_name = Self::detect_cpu_name();
 
-        let (gpu_name, total_vram, avail_vram) = Self::probe_gpu_info();
+        let gpus = Self::probe_gpus();
+        let gpu_name = gpus.first().map(|g| g.name.clone());
+        let total_vram = gpus.first().map(|g| g.total_vram_mb);
+        let avail_vram = gpus.first().map(|g| g.available_vram_mb);
 
         #[cfg(target_os = "android")]
         let backends = vec!["vulkan".to_string(), "cpu".to_string()];
@@ -502,46 +571,103 @@ impl WorkerModeManager {
             total_vram_mb: total_vram,
             available_vram_mb: avail_vram,
             gpu_name,
+            gpus,
             supported_backends: backends,
             timestamp_ms: now_ms,
         }
     }
 
-    /// Probes NVIDIA GPU identity and memory via nvidia-smi if available.
+    /// Probes every NVIDIA GPU. Falls back to an empty list when nvidia-smi is absent.
     #[cfg(windows)]
-    fn probe_gpu_info() -> (Option<String>, Option<u64>, Option<u64>) {
+    fn probe_gpus() -> Vec<GpuDeviceInfo> {
         use std::os::windows::process::CommandExt;
         use std::process::Command;
 
         let output = match Command::new("nvidia-smi")
-            .args(&["--query-gpu=name,memory.total,memory.free", "--format=csv,noheader,nounits"])
+            .args(&[
+                "--query-gpu=index,name,memory.total,memory.free",
+                "--format=csv,noheader,nounits",
+            ])
             .creation_flags(CREATE_NO_WINDOW)
             .output()
         {
             Ok(o) if o.status.success() => o,
-            _ => return (None, None, None),
+            _ => return Vec::new(),
         };
 
         let text = String::from_utf8_lossy(&output.stdout);
-        let first_line = match text.lines().next() {
-            Some(l) if !l.trim().is_empty() => l.trim(),
-            _ => return (None, None, None),
-        };
-
-        let parts: Vec<&str> = first_line.split(',').map(|s| s.trim()).collect();
-        if parts.len() >= 3 {
-            let name = parts[0].to_string();
-            let total = parts[1].parse::<u64>().ok();
-            let free = parts[2].parse::<u64>().ok();
-            (Some(name), total, free)
-        } else {
-            (None, None, None)
+        let mut gpus = Vec::new();
+        for line in text.lines() {
+            let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
+            if parts.len() < 4 {
+                continue;
+            }
+            let index = match parts[0].parse::<u32>() {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let name = parts[1].to_string();
+            if name.is_empty() {
+                continue;
+            }
+            let total = parts[2].parse::<u64>().unwrap_or(0);
+            let free = parts[3].parse::<u64>().unwrap_or(0);
+            gpus.push(GpuDeviceInfo {
+                index,
+                name,
+                total_vram_mb: total,
+                available_vram_mb: free,
+            });
         }
+        gpus
     }
 
     #[cfg(not(windows))]
-    fn probe_gpu_info() -> (Option<String>, Option<u64>, Option<u64>) {
-        (None, None, None)
+    fn probe_gpus() -> Vec<GpuDeviceInfo> {
+        Vec::new()
+    }
+
+    /// Maps a stored backend selection to an explicit `-d` argument.
+    /// `None` means "let the RPC server pick every accelerator".
+    fn resolve_device_argument(selection: &str) -> Option<String> {
+        let normalized = normalize_backend_selection(selection)?;
+        if normalized.eq_ignore_ascii_case("all") {
+            return None;
+        }
+        if normalized.eq_ignore_ascii_case("cuda") {
+            let gpus = Self::probe_gpus();
+            if gpus.is_empty() {
+                return None;
+            }
+            return Some(
+                (0..gpus.len())
+                    .map(|i| format!("CUDA{}", i))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+        }
+        if normalized.eq_ignore_ascii_case("vulkan") {
+            return Some("Vulkan0".to_string());
+        }
+        Some(normalized)
+    }
+
+    /// Returns the device names that the current selection exports.
+    pub fn selected_device_labels(selection: &str, gpus: &[GpuDeviceInfo]) -> Vec<String> {
+        let normalized = match normalize_backend_selection(selection) {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+        if normalized.eq_ignore_ascii_case("all") || normalized.eq_ignore_ascii_case("cuda") {
+            if gpus.is_empty() {
+                return vec!["CPU".to_string()];
+            }
+            return (0..gpus.len()).map(|i| format!("CUDA{}", i)).collect();
+        }
+        if normalized.eq_ignore_ascii_case("vulkan") {
+            return vec!["Vulkan0".to_string()];
+        }
+        normalized.split(',').map(|s| s.to_string()).collect()
     }
 
     /// Generates narrowly-scoped Windows Firewall rule command with specific RemoteAddress and Private/Domain profile.
@@ -1069,9 +1195,11 @@ impl WorkerModeManager {
 
         *self.current_state.lock().unwrap() = "CheckingPrerequisites".to_string();
 
-        // 5. Build exact command line arguments
+        // 5. Build exact command line arguments. Resolve the device selection
+        // to an explicit -d list so the shared devices are deterministic.
         let threads_str = config.threads.to_string();
         let port_str = config.rpc_port.to_string();
+        let device_arg = Self::resolve_device_argument(&config.backend_device);
         let mut args: Vec<&str> = vec![
             "-H", &config.listen_host,
             "-p", &port_str,
@@ -1082,15 +1210,9 @@ impl WorkerModeManager {
             args.push("-c");
         }
 
-        let dev_arg = config.backend_device.clone();
-        if dev_arg != "all" && !dev_arg.is_empty() {
-            if dev_arg.eq_ignore_ascii_case("cpu") {
-                args.push("-d");
-                args.push("CPU");
-            } else if !dev_arg.eq_ignore_ascii_case("cuda") {
-                args.push("-d");
-                args.push(&dev_arg);
-            }
+        if let Some(devices) = device_arg.as_deref() {
+            args.push("-d");
+            args.push(devices);
         }
 
         let dll_refs: Vec<&Path> = runtime.rpc_extra_dll_dirs.iter().map(|p| p.as_path()).collect();
@@ -1283,5 +1405,52 @@ impl WorkerModeManager {
         *self.current_state.lock().unwrap() = "Stopped".to_string();
         *self.last_error.lock().unwrap() = None;
         Ok(self.get_status())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_aliases_and_empty_values() {
+        assert_eq!(normalize_backend_selection("").as_deref(), Some("all"));
+        assert_eq!(normalize_backend_selection("  auto  ").as_deref(), Some("all"));
+        assert_eq!(normalize_backend_selection("cpu").as_deref(), Some("CPU"));
+        assert_eq!(normalize_backend_selection("cuda").as_deref(), Some("cuda"));
+    }
+
+    #[test]
+    fn normalizes_device_lists() {
+        assert_eq!(
+            normalize_backend_selection(" CUDA0 , CUDA1 ").as_deref(),
+            Some("CUDA0,CUDA1")
+        );
+        assert_eq!(
+            normalize_backend_selection("CUDA0,CUDA0,CPU").as_deref(),
+            Some("CUDA0,CPU")
+        );
+        assert_eq!(normalize_backend_selection("all,CPU").as_deref(), Some("all"));
+    }
+
+    #[test]
+    fn rejects_malformed_device_lists() {
+        assert_eq!(normalize_backend_selection("CUDA0,,CUDA1").as_deref(), Some("CUDA0,CUDA1"));
+        assert!(normalize_backend_selection("CUDA 0").is_none());
+        assert!(normalize_backend_selection("0CUDA").is_none());
+        assert!(normalize_backend_selection(",").is_none());
+    }
+
+    #[test]
+    fn resolves_explicit_device_arguments() {
+        assert_eq!(WorkerModeManager::resolve_device_argument("all"), None);
+        assert_eq!(
+            WorkerModeManager::resolve_device_argument("cpu").as_deref(),
+            Some("CPU")
+        );
+        assert_eq!(
+            WorkerModeManager::resolve_device_argument("CUDA0,CUDA1").as_deref(),
+            Some("CUDA0,CUDA1")
+        );
     }
 }
