@@ -591,10 +591,10 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
               </div>
               <span
                 className="mono"
-                title="Devices passed to ggml-rpc-server via -d"
+                title={autoSelection ? "Devices the RPC server exports" : "Devices passed to ggml-rpc-server via -d"}
                 style={{ fontSize: 11, color: "var(--color-text-3)" }}
               >
-                {exportedDeviceArg ? `-d ${exportedDeviceArg}` : "auto"}
+                {exportedDeviceArg ? (autoSelection ? exportedDeviceArg : `-d ${exportedDeviceArg}`) : "auto"}
               </span>
             </div>
 
@@ -632,7 +632,7 @@ export function WorkerPanel({ onSwitchToInference }: WorkerPanelProps) {
             </div>
             <div style={{ fontSize: 11, color: "var(--color-text-3)", marginTop: 6 }}>
               {autoSelection
-                ? "Exports every accelerator this machine exposes."
+                ? "Exports all non-CPU devices, or CPU when none is present."
                 : "Exports only the devices checked below."}
             </div>
 
